@@ -58,6 +58,7 @@ TSV_COLUMNS = {"ruby_decisions.tsv": 4, "ruby_dict_merge.tsv": 2, "ruby_whole.ts
                "ruby_trim.tsv": 3, "gloss_ruby.tsv": 2, "gloss_names.tsv": 4,
                "unclosed_ruby.tsv": 3}
 PUBLIC_FILES = ["README.md", "README.ja.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "CHANGELOG.md"]
+REPO_ONLY = {"README.md", "README.ja.md", "requirements.txt"}
 PUBLIC_ASSETS = [f"{view}.{lang}.png" for view in ("search-night", "search-haze", "media-haze")
                  for lang in ("en", "ja")]
 REPO_FILES = ["termux/install.sh", "termux/aobana-shortcut.sh", "termux/uninstall.sh"]
@@ -438,9 +439,12 @@ def copy_checked(pairs):
     return len(pairs)
 
 
-def program_pairs(dest):
-    pairs = [(os.path.join(ROOT, f), os.path.join(dest, f)) for f in APP_FILES]
+def program_pairs(dest, image=False):
+    pairs = [(os.path.join(ROOT, f), os.path.join(dest, f)) for f in APP_FILES
+             if not (image and f in REPO_ONLY)]
     for f in PUBLIC_FILES:
+        if image and f in REPO_ONLY:
+            continue
         src = next((p for p in (os.path.join(PUBLIC, f), os.path.join(ROOT, f)) if os.path.isfile(p)), None)
         if src is None:
             sys.exit(f"build: {f} not found in release/public or the repository root")
@@ -605,6 +609,7 @@ def smoke(py, exe=None, image=IMAGE):
     print("  paths, utils, library, indexer, epub_indexer, engine: import")
     stray = [f for f in os.listdir(image) if f.endswith((".db", ".db-wal", ".db-shm", ".json"))
              or f in ("logs", "content", "aobana.installed")]
+    stray += ["data/" + f for f in os.listdir(os.path.join(image, "data")) if f != "ruby"]
     if stray:
         sys.exit(f"build: the smoke test left files in the install image: {stray}")
 
@@ -630,7 +635,7 @@ def bundle():
     step(f"bundle -> {IMAGE}")
     check_whitelist()
     rmtree(BUILD)
-    print(f"  {copy_checked(program_pairs(IMAGE))} program files, byte-checked")
+    print(f"  {copy_checked(program_pairs(IMAGE, image=True))} program files, byte-checked")
     check_published(IMAGE)
     py, site = bundle_python()
     check_packages(py)

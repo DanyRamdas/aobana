@@ -11,8 +11,10 @@ INSTALL_URL="https://raw.githubusercontent.com/Wyzmic/aobana/main/termux/install
 UPDATE_EXIT_CODE=75
 
 PORT="$AOBANA_PORT"
-if [ -z "$PORT" ] && [ -f "$AOBANA_DIR/config.json" ]; then
-    PORT=$(sed -n 's/.*"port"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$AOBANA_DIR/config.json" | head -n 1)
+CONFIG="$AOBANA_DIR/data/config.json"
+[ -f "$CONFIG" ] || CONFIG="$AOBANA_DIR/config.json"
+if [ -z "$PORT" ] && [ -f "$CONFIG" ]; then
+    PORT=$(sed -n 's/.*"port"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$CONFIG" | head -n 1)
 fi
 PORT="${PORT:-5000}"
 URL="http://127.0.0.1:$PORT/"

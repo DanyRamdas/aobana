@@ -11,9 +11,13 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, 'w')
 
+import paths
+if __name__ == "__main__":
+    paths.move_into_data_folder()
+
 from flask import Flask, render_template, make_response, request, jsonify, g, abort
 from engine import get_search_results, format_episode_title, format_book_title, get_formatted_title, get_ruby_lexicon
-import paths
+import engine
 import library
 import folder_picker
 import updater
@@ -43,7 +47,7 @@ def favicon():
 
 BOOT_ID = os.environ.setdefault("AOBANA_BOOT_ID", uuid.uuid4().hex)
 
-VERSION = "1.2"
+VERSION = "1.3"
 RELEASES_URL = "https://github.com/Wyzmic/aobana/releases/latest"
 RELEASES_API = "https://api.github.com/repos/Wyzmic/aobana/releases"
 LATEST_API = f"{RELEASES_API}/latest"
@@ -133,7 +137,8 @@ def api_search():
     client_key = f"client:{token}" if token else f"ip:{request.remote_addr}"
     q = request.args.get("q", "")
     sort = request.args.get("sort", "recommended")
-    folder = request.args.get("folder", "")
+    folders = tuple(sorted(f for f in request.args.getlist("folder") if f))
+    folder = folders[0] if len(folders) == 1 else (folders or None)
     exact = request.args.get("exact") == "on"
     limit = request.args.get("limit", 500, type=int)
     offset = request.args.get("offset", 0, type=int)
@@ -141,12 +146,9 @@ def api_search():
     media = request.args.get("media", "all")
     seed = request.args.get("seed", type=int)
 
-    if not folder:
-        folder = None
-        
     db_subs, db_epub = get_db()
     abort_flag = [False]
-    search = (q, sort, seed if sort == "random" else None, media, exact, folder, file_param)
+    search = (q, sort, seed if sort == "random" else None, media, exact, None if q else folder, file_param)
     mine = (search, abort_flag, (db_subs, db_epub))
 
     with queries_lock:
@@ -234,11 +236,19 @@ def api_episodes():
         pattern = folder + "\\" + "%"
         pattern_fwd = folder + "/" + "%"
         try:
-            cur_epub = db_epub.execute('''
-                SELECT DISTINCT file FROM epubs 
-                WHERE file LIKE ? OR file LIKE ?
-                ORDER BY file ASC
-            ''', (pattern, pattern_fwd))
+            import utils
+            if utils.has_chapters(db_epub):
+                cur_epub = db_epub.execute('''
+                    SELECT DISTINCT file FROM chapters
+                    WHERE (file >= ? AND file < ?) OR (file >= ? AND file < ?)
+                    ORDER BY file ASC
+                ''', (pattern[:-1], pattern[:-1] + "\U0010ffff", pattern_fwd[:-1], pattern_fwd[:-1] + "\U0010ffff"))
+            else:
+                cur_epub = db_epub.execute('''
+                    SELECT DISTINCT file FROM epubs
+                    WHERE file LIKE ? OR file LIKE ?
+                    ORDER BY file ASC
+                ''', (pattern, pattern_fwd))
             for row in cur_epub:
                 file_key = row["file"]
                 title = format_book_title(file_key, db_epub=db_epub)
@@ -305,7 +315,7 @@ def api_context():
         is_epub = False
     elif db_epub is not None:
         try:
-            chk = db_epub.execute("SELECT line FROM epubs WHERE file = ? LIMIT 1", (file,)).fetchone()
+            chk = db_epub.execute("SELECT 1 FROM epubs WHERE rowid = ? AND file = ?", (rowid, file)).fetchone()
             if chk:
                 is_epub = True
         except Exception:
@@ -483,7 +493,41 @@ def api_media():
 @app.route("/api/library", methods=["GET"])
 def api_library():
     db_subs, db_epub = get_db()
-    return jsonify({**library.describe(db_subs, db_epub), "folder_picker": folder_picker.available()})
+    return jsonify({**library.describe(db_subs, db_epub), "folder_picker": folder_picker.available(),
+                    "search_cache": _search_cache_facts()})
+
+
+def _search_cache_facts():
+    return {**engine.disk_cache_stats(), "on": engine.disk_cache_enabled()}
+
+
+@app.route("/api/search-cache", methods=["POST"])
+def api_search_cache_set():
+    _require_page()
+    library.set_search_cache((request.get_json(silent=True) or {}).get("on") is True)
+    return jsonify({"ok": True, "search_cache": _search_cache_facts()})
+
+
+@app.route("/api/search-cache/clear", methods=["POST"])
+def api_search_cache_clear():
+    _require_page()
+    return jsonify({"ok": engine.clear_disk_cache(), "search_cache": _search_cache_facts()})
+
+
+@app.route("/api/library/figures", methods=["GET"])
+def api_library_figures():
+    return jsonify(library.figures())
+
+
+@app.route("/api/activity", methods=["GET"])
+def api_activity():
+    return jsonify(library.activity())
+
+
+@app.route("/api/activity/dismiss", methods=["POST"])
+def api_activity_dismiss():
+    library.dismiss_notice((request.get_json(silent=True) or {}).get("id"))
+    return jsonify({"ok": True})
 
 
 @app.route("/api/library/outdated", methods=["GET"])
@@ -682,6 +726,16 @@ def api_release_notes():
                                       "url": release.get("html_url") or RELEASES_URL}
     notes = release_notes.get(VERSION) or {"notable": [], "url": f"{RELEASES_TAG_URL}{VERSION}"}
     return jsonify({"version": VERSION, **notes})
+
+
+@app.route("/api/changelog", methods=["GET"])
+def api_changelog():
+    here = os.path.dirname(os.path.abspath(__file__))
+    for p in (os.path.join(here, "CHANGELOG.md"), os.path.join(here, "release", "public", "CHANGELOG.md")):
+        if os.path.isfile(p):
+            with open(p, encoding="utf-8") as f:
+                return jsonify({"version": VERSION, "text": f.read(), "url": RELEASES_URL})
+    return jsonify({"version": VERSION, "text": None, "url": RELEASES_URL})
 
 
 @app.route("/api/index/status", methods=["GET"])

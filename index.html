@@ -196,6 +196,7 @@
 
     html, body { min-height: 100%; }
     html { scrollbar-gutter: stable; }
+    html, .sidebar { overflow-anchor: none; }
     :root { --pad: 1rem; --bar-px: 0.9em; }
     body {
       font-family: 'Noto Sans JP', 'Aobana Sans', 'Noto Serif Hentaigana', 'BabelStone Han', 'BabelStone Han Extra', 'BabelStone Han PUA', 'I.Ming Seiji', 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic', Meiryo, sans-serif;
@@ -455,13 +456,19 @@
     .exact-chip:focus-within { box-shadow: 0 0 0 3px var(--accent-soft); }
     .sort-dd { width: 180px; }
     .filter-note {
-      display: inline-flex; align-items: center; gap: 8px; margin-bottom: 1em;
-      background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--accent-line);
-      border-radius: 16px; padding: 4px 6px 4px 12px; font-size: 0.88em; max-width: 100%; box-sizing: border-box;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 1em; font-size: 0.88em;
     }
-    .filter-note span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .filter-note button {
+    .filter-note[hidden] { display: none; }
+    .filter-label { color: var(--text-muted); margin-right: 2px; }
+    .filter-chip {
+      display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%;
+      background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--accent-line);
+      border-radius: 16px; padding: 4px 4px 4px 12px; box-sizing: border-box;
+    }
+    .filter-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .filter-chip button {
       border: none; background: none; color: inherit; cursor: pointer; font-size: 1em; padding: 0 6px; line-height: 1;
+      flex-shrink: 0;
     }
 
     #results { display: flex; flex-direction: column; gap: 0.8em; }
@@ -563,6 +570,8 @@
     }
     #history-state { padding: 0.5em 0; display: none; }
     .history-label { color: var(--text-muted); margin-bottom: 1em; user-select: none; -webkit-user-select: none; }
+    .folder-hint { color: var(--text-muted); font-size: 0.9em; margin: 1.6em 0 0; }
+    #history-state > .folder-hint:first-child { margin-top: 0; }
     .history-chips { display: flex; gap: 8px; flex-wrap: wrap; }
     .history-chip {
       background: var(--bg-btn); color: var(--link); padding: 6px 12px; border-radius: 16px;
@@ -631,6 +640,19 @@
     .media-detail-head { margin-bottom: var(--pad); }
     .media-detail-head h1 { font-size: 1.4em; margin: 0.4em 0 0.2em; color: var(--text-title); word-break: break-word; }
     .media-detail-head .media-stats { margin-top: 0.5em; flex-wrap: wrap; }
+    .media-detail-search { display: flex; gap: 0.7em; align-items: center; flex-wrap: wrap; margin-top: 1em; }
+    .media-detail-search .seg { width: 200px; max-width: 100%; flex-shrink: 0; }
+    .media-detail-search .folder-filter { flex: 1; min-width: 0; width: auto; height: 38px; }
+    .media-detail-form { flex: 1; min-width: 0; display: flex; gap: 0.6em; align-items: center; margin: 0; }
+    .media-detail-form .search-input-wrap { flex: 1 1 0; min-width: 0; }
+    .media-detail-form .exact-chip { flex-shrink: 0; }
+    .media-detail-form[hidden] { display: none; }
+    @media (max-width: 560px) {
+      .media-detail-search .seg { width: 100%; order: -1; }
+    }
+    .media-detail-form .search-input { height: 38px; font-size: 0.96em; padding: 8px 14px; }
+    .media-detail-form .search-btn-box { height: 38px; width: 44px; }
+    .media-detail-form .exact-chip { height: 38px; }
     #saved-head {
       background: var(--bg-sidebar); border: 1px solid var(--border-color); border-radius: 12px;
       padding: 1.1em 1.4em; box-shadow: 0 4px 12px var(--shadow); margin-bottom: var(--pad);
@@ -752,6 +774,18 @@
                      font-size: max(1rem, 1em); line-height: 1.75; }
     .whatsnew-list li { margin: 0 0 0.55em; }
     .whatsnew-list code { font-size: 0.92em; padding: 0.05em 0.35em; border-radius: 4px; background: var(--bg-hover); }
+    #task-notices { position: fixed; right: 1em; bottom: 1em; z-index: 900; display: flex; flex-direction: column;
+                    gap: 0.6em; max-width: min(420px, calc(100vw - 2em)); }
+    .task-notice { display: flex; align-items: center; gap: 0.9em; padding: 0.8em 1em; border-radius: 10px;
+                   background: var(--bg-card); border: 1px solid var(--ok); box-shadow: 0 8px 24px var(--shadow);
+                   color: var(--text-main); font-size: 0.92em; line-height: 1.55; }
+    .task-notice.warn { border-color: var(--gold); }
+    .task-notice span { flex: 1; }
+    .guide-top { display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap; margin: 0 0 1.4em; }
+    .guide-version { font-weight: 600; color: var(--text-title); margin-right: 0.4em; }
+    .changelog-card h2 { text-align: left; }
+    .changelog-card #changelog-body { text-align: left; }
+    .changelog-card #changelog-body p { color: var(--text-main); }
     #update-progress { width: 100%; margin: 0 0 1em; accent-color: var(--accent); }
     .modal-header {
       display: flex; justify-content: space-between; align-items: center; margin-bottom: 1em;
@@ -858,7 +892,7 @@
       .media-name, .media-author { white-space: normal; overflow-wrap: anywhere; }
       .media-row { display: grid; grid-template-columns: auto 1fr; align-items: start; row-gap: 0.4em; }
       .media-row .media-stats { grid-column: 2; }
-      .media-stats .stat-pill.secondary { display: none; }
+      .media-row .media-stats .stat-pill.secondary { display: none; }
     }
   </style>
   <script>
@@ -896,7 +930,8 @@
         placeholder: '検索（例: 食べる、たべる、"食べて"）', exact: '完全一致', exact_title: '入力した語形のまま検索します',
         recent: '最近の検索:', searching: 'データベースを検索中…', no_results: '一致する結果が見つかりませんでした。',
         no_more: 'これ以上ありません', loading: '読み込み中…', error: 'エラーが発生しました', load_failed: '読み込みに失敗しました',
-        chars: '{n} 字', filtering: '絞り込み中: {f}', clear_filter: '絞り込みを解除',
+        chars: '{n} 字', filtering: '絞り込み中:', remove_filter: '「{f}」を外す',
+        folder_hint: '左の作品名を押すと、その作品の中だけを検索します。いくつでも選べます。',
         empty_title: 'ライブラリが空です',
         empty_body: '字幕（.srt / .ass）と電子書籍（.epub）をフォルダに入れて、ライブラリタブでインデックスを作成すると検索できるようになります。',
         empty_btn: 'ライブラリを開く',
@@ -907,6 +942,8 @@
         page_size_title: '一度に読み込む件数', page_size_n: '{n} 件ずつ', page_size_all: 'すべて',
         eta_left: '残り約 {t}', eta_s: '{n} 秒', eta_m: '{m} 分', eta_ms: '{m} 分 {s} 秒', eta_soon: 'まもなく完了',
         media_none: '該当する作品はありません。', back_media: 'メディア一覧',
+        media_mode_title: 'タイトル', media_mode_content: '本文',
+        media_detail_filter_subs: '話タイトルで絞り込み', media_detail_filter_epub: '章タイトルで絞り込み',
         stat_eps: '{n} 話', stat_lines: '{n} 行', stat_chaps: '{n} 章', stat_sents: '{n} 文',
         kind_subs: '字幕', kind_epub: '書籍',
         sc_title: 'ショートカット', sc_focus: '検索バーにフォーカス', sc_next: '次のカードを選択', sc_prev: '前のカードを選択',
@@ -919,6 +956,7 @@
         welcome_s3: '<b>検索</b>タブで単語や表現を検索する',
         welcome_more: '使い方の詳細は<b>ガイド</b>タブにあります。',
         welcome_guide: 'ガイドを読む', welcome_start: 'はじめる', welcome_again: 'ようこそ画面をもう一度表示',
+        changelog: '変更履歴', changelog_lang: '変更履歴は英語で書かれています。', changelog_none: '変更履歴を読み込めませんでした。',
         update_title: '新しいバージョンがあります',
         update_body: 'お使いのバージョンは <b>{current}</b>、最新版は <b>{latest}</b> です。',
         update_more: 'GitHub のリリースページからダウンロードできます。',
@@ -946,7 +984,12 @@
         lib_disk_subs: 'フォルダ内: 字幕ファイル {n} 件', lib_disk_books: 'フォルダ内: .epub ファイル {n} 件',
         lib_other: '対象外のファイル {n} 件（.srt / .ass / .ssa / .epub 以外は無視されます）',
         lib_filtered: 'インデックスしないファイル {n} 件（ライブラリの点検で選んだもの）',
-        lib_missing: 'このフォルダは見つかりません。',
+        lib_missing: 'このフォルダは見つかりません。', lib_counting: '（数えています…）',
+        notice_index: 'インデックスの作成が完了しました（{time}）。', notice_index_stopped: 'インデックスの作成を停止しました（{time}）。',
+        notice_index_error: 'インデックスの作成がエラーで終了しました（{time}）。詳しくはライブラリ タブに表示されています。',
+        notice_check: 'ライブラリの点検が完了しました（{time}）。', notice_check_stopped: 'ライブラリの点検を停止しました（{time}）。',
+        notice_check_error: 'ライブラリの点検がエラーで終了しました（{time}）。詳しくはライブラリ タブに表示されています。',
+        notice_figures: 'ライブラリ タブのフォルダの集計が完了しました（{time}）。',
         lib_indexed_subs: 'インデックス済み: {files} ファイル · {rows} 行',
         lib_indexed_books: 'インデックス済み: {files} 冊 · {rows} 文',
         lib_outdated: '以前のバージョンでインデックスされたファイルがあります（字幕 {subs} · 書籍 {books}）。書籍の章の分け方と字幕の読み込みの改善は、再インデックスするまで反映されません。',
@@ -985,6 +1028,10 @@
         lib_db_err_exists: 'そのフォルダにはすでに subs.db または epub.db があります。上書きはしません。',
         lib_db_err_notwritable: 'そのフォルダには書き込めません。',
         lib_db_err_failed: '移動できませんでした。データベースは元の場所のままです。',
+        lib_cache_title: '検索キャッシュ', lib_cache: '保存済み: {n} 件 · {size}',
+        lib_cache_lead: 'オンにすると、1 秒以上かかった検索の結果をデータベースの隣に保存し、再起動後もすぐに表示します（最大 1 GB）。大きなライブラリで同じ語をよく検索する場合に役立ちます。多くの場合は不要です。オフにしても保存済みの結果は残り、「検索キャッシュを消去」でいつでも削除できます。',
+        lib_cache_on: 'オン', lib_cache_off: 'オフ',
+        lib_cache_clear: '検索キャッシュを消去', lib_cache_cleared: '検索キャッシュを消去しました。',
         lib_not_set: '未設定です。「変更」からフォルダを指定してください。',
         lib_root_not_set: 'フォルダが未設定のため、この段階は省略されました: {s}',
         lib_scope_all: '字幕と書籍', lib_scope_subs: '字幕のみ', lib_scope_epub: '書籍のみ',
@@ -1046,7 +1093,8 @@
         placeholder: 'Search (e.g. 食べる, たべる, "食べて")', exact: 'Exact', exact_title: 'Match the form exactly as typed',
         recent: 'Recent searches:', searching: 'Searching...', no_results: 'No matching sentences found.',
         no_more: 'No more results', loading: 'Loading...', error: 'Something went wrong', load_failed: 'Could not load',
-        chars: '{n} {n|char|chars}', filtering: 'Filtered to: {f}', clear_filter: 'Clear filter',
+        chars: '{n} {n|char|chars}', filtering: 'Filtered to:', remove_filter: 'Remove "{f}"',
+        folder_hint: 'Click a title on the left to search inside it only. You can pick several.',
         empty_title: 'Your library is empty',
         empty_body: 'Put subtitle files (.srt / .ass) and e-books (.epub) in your folders, then build the index in the Library tab to start searching.',
         empty_btn: 'Open Library',
@@ -1057,6 +1105,8 @@
         page_size_title: 'How many to load at once', page_size_n: '{n} at a time', page_size_all: 'All',
         eta_left: 'About {t} left', eta_s: '{n} s', eta_m: '{m} min', eta_ms: '{m} min {s} s', eta_soon: 'Almost done',
         media_none: 'Nothing matches.', back_media: 'All media',
+        media_mode_title: 'Titles', media_mode_content: 'Content',
+        media_detail_filter_subs: 'Filter episode titles', media_detail_filter_epub: 'Filter chapter titles',
         stat_eps: '{n} {n|episode|episodes}', stat_lines: '{n} {n|line|lines}', stat_chaps: '{n} {n|chapter|chapters}', stat_sents: '{n} {n|sentence|sentences}',
         kind_subs: 'SUBS', kind_epub: 'BOOK',
         sc_title: 'Keyboard shortcuts', sc_focus: 'Focus the search bar', sc_next: 'Select the next card', sc_prev: 'Select the previous card',
@@ -1069,6 +1119,7 @@
         welcome_s3: 'Search for words and phrases in the <b>Search</b> tab',
         welcome_more: 'The <b>Guide</b> tab explains everything in more detail.',
         welcome_guide: 'Read the guide', welcome_start: 'Get started', welcome_again: 'Show the welcome screen again',
+        changelog: 'Changelog', changelog_lang: '', changelog_none: 'The changelog could not be loaded.',
         update_title: 'A new version is available',
         update_body: "You're on version <b>{current}</b>. The latest available is <b>{latest}</b>.",
         update_more: 'You can download it from the release page on GitHub.',
@@ -1096,7 +1147,12 @@
         lib_disk_subs: 'In the folder: {n} subtitle {n|file|files}', lib_disk_books: 'In the folder: {n} .epub {n|file|files}',
         lib_other: '{n} other {n|file|files} (anything that is not .srt / .ass / .ssa / .epub is ignored)',
         lib_filtered: '{n} {n|file|files} left out of the index (chosen in Check library)',
-        lib_missing: 'This folder does not exist.',
+        lib_missing: 'This folder does not exist.', lib_counting: '(counting...)',
+        notice_index: 'Indexing finished ({time}).', notice_index_stopped: 'Indexing stopped ({time}).',
+        notice_index_error: 'Indexing ended with an error ({time}). The Library tab shows what happened.',
+        notice_check: 'Check library finished ({time}).', notice_check_stopped: 'Check library stopped ({time}).',
+        notice_check_error: 'Check library ended with an error ({time}). The Library tab shows what happened.',
+        notice_figures: 'The Library tab has finished counting the folders ({time}).',
         lib_indexed_subs: 'Indexed: {files} {files|file|files} · {rows} {rows|line|lines}',
         lib_indexed_books: 'Indexed: {files} {files|book|books} · {rows} {rows|sentence|sentences}',
         lib_outdated: 'Some files were indexed by an earlier version ({subs} subtitle {subs|file|files} · {books} {books|book|books}). The improved book chapters and cleaner subtitles apply to them only after they are re-indexed.',
@@ -1135,6 +1191,10 @@
         lib_db_err_exists: 'That folder already holds a subs.db or epub.db. Nothing is overwritten.',
         lib_db_err_notwritable: 'That folder cannot be written to.',
         lib_db_err_failed: 'The move failed. The databases are still where they were.',
+        lib_cache_title: 'Search cache', lib_cache: 'Saved: {n} {n|search|searches} · {size}',
+        lib_cache_lead: 'When on, searches that take a second or more are saved beside the databases, so they show at once, even after a restart (up to 1 GB). Useful for a large library searched for the same words often; most libraries do not need it. Turning it off keeps what was saved; Clear search cache deletes it at any time.',
+        lib_cache_on: 'On', lib_cache_off: 'Off',
+        lib_cache_clear: 'Clear search cache', lib_cache_cleared: 'The search cache was cleared.',
         lib_not_set: 'Not set. Choose a folder with "Change".',
         lib_root_not_set: 'This stage was skipped because its folder is not set: {s}',
         lib_scope_all: 'Subtitles and books', lib_scope_subs: 'Subtitles only', lib_scope_epub: 'Books only',
@@ -1219,7 +1279,7 @@
                : (SORTS.includes(store.get('sort')) ? store.get('sort') : 'recommended');
     const MEDIA = MEDIAS.includes(PARAMS.get('media')) ? PARAMS.get('media')
                 : (MEDIAS.includes(store.get('media')) ? store.get('media') : 'all');
-    let currentFolder = PARAMS.get('folder') || null;
+    let currentFolders = PARAMS.getAll('folder').filter(Boolean);
     function searchParams() {
       const p = new URLSearchParams(window.location.search);
       p.delete('tab');
@@ -1280,7 +1340,7 @@
       const fresh = Math.floor(Math.random() * 2147483647);
       const p = new URLSearchParams(window.location.search);
       const url = [p.get('q') || '', p.get('sort') || 'recommended', p.get('media') || 'all',
-                   p.get('exact') || '', p.get('folder') || ''].join('\u0000');
+                   p.get('exact') || '', p.getAll('folder').join('\u0001')].join('\u0000');
       try {
         const last = JSON.parse(sessionStorage.getItem('aobana_seed') || 'null');
         if (last && last.url === url) return last.seed;
@@ -1333,14 +1393,15 @@
       document.title = part ? `${part} | ${t('app')}` : t('app');
     }
 
-    async function initFetch() {
+    async function initFetch(inPage) {
       const q = PARAMS.get('q');
       setTitle(q ? t('title_results', { q }) : t('tab_search'));
 
       if (!q) {
-        showSearchHistory();
+        showSearchHistory(inPage);
         return;
       }
+      renderFilterNote();
 
       saveToHistory(q);
       store.set('aobana_last_search', window.location.pathname + window.location.search);
@@ -1354,7 +1415,17 @@
 
       document.getElementById('history-state').style.display = 'none';
       document.getElementById('main-loading').style.display = 'flex';
-      document.getElementById('results').innerHTML = '';
+      const resultsBox = document.getElementById('results');
+      if (inPage) {
+        resultsBox.style.minHeight = resultsBox.offsetHeight + 'px';
+        const side = document.querySelector('.sidebar');
+        if (side && getComputedStyle(side).position === 'sticky') {
+          const stuckAt = Math.max(0, Math.round(side.parentElement.getBoundingClientRect().top + window.scrollY
+                                                 - (parseFloat(getComputedStyle(side).top) || 0)));
+          if (window.scrollY > stuckAt) window.scrollTo({ top: stuckAt, behavior: 'instant' });
+        }
+      }
+      resultsBox.innerHTML = '';
       document.getElementById('empty-state').style.display = 'none';
 
       const gen = searchGen;
@@ -1367,10 +1438,8 @@
 
         if (data.aborted) return;
 
-        if (data.results.length === 0 && currentFolder) {
-            const url = new URL(window.location);
-            url.searchParams.delete('folder');
-            window.location.href = url.toString();
+        if (data.results.length === 0 && currentFolders.length) {
+            applyFolders([], true);
             return;
         }
 
@@ -1378,7 +1447,7 @@
         hasMoreResults = data.has_more;
         currentOffset = 500;
 
-        renderSidebar(data);
+        renderSidebar(data, inPage);
         renderBatches();
         setupLoadMoreSentinel();
 
@@ -1389,7 +1458,10 @@
             console.error("Fetch error:", err);
         }
       } finally {
-        if (gen === searchGen) stopSearchEta();
+        if (gen === searchGen) {
+          stopSearchEta();
+          document.getElementById('results').style.minHeight = '';
+        }
         if (currentSearchController && !currentSearchController.signal.aborted) {
             document.getElementById('main-loading').style.display = 'none';
         }
@@ -1428,7 +1500,7 @@
       store.set('searchHistory', JSON.stringify(history));
     }
 
-    function showSearchHistory() {
+    function showSearchHistory(inPage) {
       let history;
       try { history = JSON.parse(store.get('searchHistory', '[]')); } catch (e) { history = []; }
       if (!Array.isArray(history)) history = [];
@@ -1436,16 +1508,18 @@
       renderFilterNote();
       if (history.length > 0) {
         const keep = new URLSearchParams();
-        if (currentFolder) keep.set('folder', currentFolder);
+        currentFolders.forEach(f => keep.append('folder', f));
         const chips = history.slice(0, 15).map(q => {
           const p = new URLSearchParams(keep); p.set('q', q);
           return `<a href="/?${p.toString()}" class="history-chip" draggable="false">${esc(q)}</a>`;
         }).join('');
-        panel.innerHTML = `<div class="history-label">${esc(t('recent'))}</div><div class="history-chips">${chips}</div>`;
-        panel.style.display = 'block';
+        panel.innerHTML = `<div class="history-label">${esc(t('recent'))}</div><div class="history-chips">${chips}</div>
+          <p class="folder-hint">${esc(t('folder_hint'))}</p>`;
       } else {
-        panel.style.display = 'none';
+        panel.innerHTML = `<p class="folder-hint">${esc(t('folder_hint'))}</p>`;
       }
+      panel.style.display = 'block';
+      if (inPage && sidebarData) return;
 
       const historySignal = currentSearchController ? currentSearchController.signal : undefined;
       fetch(apiSearchUrl(`q=&media=${encodeURIComponent(MEDIA)}&limit=0`), historySignal ? { signal: historySignal } : {})
@@ -1460,8 +1534,10 @@
     function renderFilterNote() {
       const note = document.getElementById('filter-note');
       if (!note) return;
-      if (currentFolder) {
-        note.innerHTML = `<span>${esc(t('filtering', { f: currentFolder }))}</span><button type="button" title="${esc(t('clear_filter'))}" onclick="setFolder(null, event)">✕</button>`;
+      if (currentFolders.length) {
+        note.innerHTML = `<span class="filter-label">${esc(t('filtering'))}</span>` + currentFolders.map(f => `
+          <span class="filter-chip"><span class="filter-chip-name">${esc(f)}</span><button type="button" data-folder="${esc(f)}" title="${esc(t('remove_filter', { f }))}" aria-label="${esc(t('remove_filter', { f }))}">✕</button></span>`).join('');
+        note.querySelectorAll('button[data-folder]').forEach(b => b.addEventListener('click', e => setFolder(b.dataset.folder, e)));
         note.hidden = false;
       } else {
         note.hidden = true;
@@ -1479,7 +1555,7 @@
 
     function sidebarRow(f) {
       const data = sidebarData;
-      const isSelected = currentFolder === f ? 'selected' : '';
+      const isSelected = currentFolders.includes(f) ? 'selected' : '';
       const count = data.folder_counts && data.folder_counts[f] !== undefined ? data.folder_counts[f] : 0;
       return `
           <li>
@@ -1490,11 +1566,19 @@
           </li>`;
     }
 
-    function renderSidebar(data) {
+    function renderSidebar(data, inPage) {
       sidebarData = data;
       const folders = data.all_folders || [];
+      if (inPage) {
+        if (sidebarSignature(data) === sidebarDrawn) { markSelected(); return; }
+        const sidebar = document.querySelector('.sidebar');
+        const top = sidebar ? sidebar.scrollTop : 0;
+        drawSidebar();
+        if (sidebar) sidebar.scrollTop = top;
+        return;
+      }
       const saved = parseInt(sessionStorageGet('sidebarShown') || '0', 10) || 0;
-      sidebarShown = Math.max(SIDEBAR_PAGE, folders.indexOf(currentFolder) + 1, saved);
+      sidebarShown = Math.max(SIDEBAR_PAGE, ...currentFolders.map(f => folders.indexOf(f) + 1), saved);
       drawSidebar();
 
       const scrollPos = sessionStorageGet('sidebarScroll');
@@ -1507,16 +1591,29 @@
     }
     function sessionStorageGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
 
+    let sidebarDrawn = null;
+    function sidebarSignature(data) {
+      return JSON.stringify([data.all_folders || [], data.folder_counts || {}, data.global_total || 0]);
+    }
+
+    function markSelected() {
+      document.querySelectorAll('#folder-list-dynamic .folder-link[data-folder]').forEach(a => {
+        const f = a.dataset.folder;
+        a.classList.toggle('selected', f ? currentFolders.includes(f) : !currentFolders.length);
+      });
+    }
+
     function drawSidebar() {
       const list = document.getElementById('folder-list-dynamic');
       if (!list || !sidebarData) return;
+      sidebarDrawn = sidebarSignature(sidebarData);
       const input = document.getElementById('folder-filter');
       const needle = input ? input.value.trim().toLowerCase() : '';
       const folders = sidebarData.all_folders || [];
       sidebarMatches = needle ? folders.filter(f => f.toLowerCase().includes(needle)) : folders;
       let html = `
         <li>
-          <a href="#" data-folder="" class="folder-link ${!currentFolder ? 'selected' : ''}" id="folder-all" draggable="false">
+          <a href="#" data-folder="" class="folder-link ${!currentFolders.length ? 'selected' : ''}" id="folder-all" draggable="false">
             <span>${esc(t('all'))}</span>
             <span class="count-badge">${fmt(sidebarData.global_total || 0)}</span>
           </a>
@@ -1553,12 +1650,31 @@
 
     function setFolder(folder, event) {
       if (event && event.preventDefault) event.preventDefault();
+      if (!folder) applyFolders([]);
+      else if (currentFolders.includes(folder)) applyFolders(currentFolders.filter(f => f !== folder));
+      else applyFolders([...currentFolders, folder]);
+    }
+
+    function applyFolders(next, replace) {
+      currentFolders = next;
       const url = new URL(window.location);
       url.searchParams.delete('view');
-      if (folder) url.searchParams.set('folder', folder);
-      else url.searchParams.delete('folder');
-      window.location.href = url.toString();
+      url.searchParams.delete('folder');
+      next.forEach(f => url.searchParams.append('folder', f));
+      history[replace ? 'replaceState' : 'pushState'](null, '', url);
+      syncHiddenFolders();
+      markSelected();
+      renderFilterNote();
+      initFetch(true);
     }
+
+    function syncHiddenFolders() {
+      const box = document.getElementById('hidden-folders');
+      if (!box) return;
+      box.innerHTML = currentFolders.map(f => `<input type="hidden" name="folder" value="${esc(f)}">`).join('');
+    }
+
+    window.addEventListener('popstate', () => { if (TAB === 'search') location.reload(); });
 
     function toggleFurigana() {
       const off = document.documentElement.classList.toggle('no-furigana');
@@ -1869,6 +1985,13 @@
 
     const MEDIA_STATE = 'aobana_last_media';
     let mediaRestoring = false;
+    let mediaDetailFiles = [];
+    let mediaDetailFolder = '';
+    let mediaDetailMedia = 'all';
+    let mediaDetailMode = store.get('mediaDetailMode') === 'content' ? 'content' : 'title';
+    let mediaDetailContentActive = false;
+    let mediaDetailCtrl = null;
+    let mediaDetailGen = 0;
     function mediaUrl() { return window.location.pathname + window.location.search; }
     function readMediaState() {
       try { const v = JSON.parse(store.get(MEDIA_STATE) || 'null'); return v && typeof v.url === 'string' ? v : null; }
@@ -1876,13 +1999,26 @@
     }
     function saveMediaState() {
       if (TAB !== 'media' || mediaRestoring) return;
+      const filterEl = document.getElementById('media-detail-filter');
+      const qEl = document.getElementById('media-detail-q');
+      const exactEl = document.getElementById('media-detail-exact');
+      if (mediaDetailMode === 'content' && mediaDetailContentActive && qEl && qEl.value.trim()) {
+        store.set(MEDIA_STATE, JSON.stringify({
+          url: mediaUrl(), mode: 'content', q: qEl.value.trim(), exact: !!(exactEl && exactEl.checked),
+          open: [], y: Math.round(window.scrollY), at: mediaAnchor()
+        }));
+        return;
+      }
       const open = [];
       document.querySelectorAll('#results .episode-card:not(.collapsed)').forEach(card => {
         const h = card.querySelector('.episode-header');
         const loaded = card.querySelectorAll('.episode-line').length;
         if (h && loaded) open.push({ file: h.dataset.file, loaded });
       });
-      store.set(MEDIA_STATE, JSON.stringify({ url: mediaUrl(), open, y: Math.round(window.scrollY), at: mediaAnchor() }));
+      const titleQ = (mediaDetailMode === 'title' && filterEl) ? filterEl.value.trim() : '';
+      store.set(MEDIA_STATE, JSON.stringify({
+        url: mediaUrl(), mode: mediaDetailMode, q: titleQ, open, y: Math.round(window.scrollY), at: mediaAnchor()
+      }));
     }
     function mediaAnchor() {
       const bar = document.querySelector('.topbar');
@@ -1913,6 +2049,27 @@
     async function restoreMediaState(state) {
       mediaRestoring = true;
       try {
+        if (state.mode === 'title' || state.mode === 'content') {
+          setMediaDetailMode(state.mode, true);
+        }
+        if (state.mode === 'content' && state.q) {
+          const qEl = document.getElementById('media-detail-q');
+          const exactEl = document.getElementById('media-detail-exact');
+          const chipEl = document.getElementById('media-detail-exact-chip');
+          if (qEl) qEl.value = state.q;
+          if (exactEl) exactEl.checked = !!state.exact;
+          if (chipEl) chipEl.classList.toggle('on', !!state.exact);
+          await runMediaDetailContentSearch(state.q, !!state.exact);
+          scrollToMediaAnchor(state);
+          return;
+        }
+        if (state.mode === 'title' && state.q) {
+          const filterEl = document.getElementById('media-detail-filter');
+          if (filterEl) {
+            filterEl.value = state.q;
+            filterMediaDetailTitles(state.q);
+          }
+        }
         for (const o of state.open || []) {
           const header = [...document.querySelectorAll('#results .episode-header')].find(h => h.dataset.file === o.file);
           if (!header) continue;
@@ -2082,7 +2239,47 @@
       head.hidden = false;
       head.after(document.getElementById('main-loading'), document.getElementById('results'));
       const media = MEDIAS.includes(PARAMS.get('media')) ? PARAMS.get('media') : 'all';
-      head.innerHTML = `<a class="back-link" href="/?tab=media">← ${esc(t('back_media'))}</a><h1>${esc(folder)}</h1><div id="media-detail-meta"></div>`;
+      mediaDetailFolder = folder;
+      mediaDetailMedia = media;
+      mediaDetailContentActive = false;
+      head.innerHTML = `<a class="back-link" href="/?tab=media">← ${esc(t('back_media'))}</a><h1>${esc(folder)}</h1><div id="media-detail-meta"></div>
+        <div class="media-detail-search">
+          <input id="media-detail-filter" class="folder-filter" type="text" placeholder="${esc(t(media === 'epub' ? 'media_detail_filter_epub' : 'media_detail_filter_subs'))}" spellcheck="false" autocomplete="off" oninput="onMediaDetailTitleInput()" ${mediaDetailMode === 'title' ? '' : 'hidden'}>
+          <form id="media-detail-form" class="media-detail-form" autocomplete="off" onsubmit="onMediaDetailContentSubmit(event)" ${mediaDetailMode === 'content' ? '' : 'hidden'}>
+            <div class="search-input-wrap">
+              <input id="media-detail-q" class="search-input" type="text" placeholder="${esc(t('placeholder'))}" value="" autocomplete="off" spellcheck="false" oninput="onMediaDetailContentInput(this)">
+              <span class="search-btn-box">
+                <button type="submit" class="search-btn" aria-label="${esc(t('tab_search'))}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+                </button>
+              </span>
+            </div>
+            <label class="exact-chip" id="media-detail-exact-chip" title="${esc(t('exact_title'))}">
+              <input type="checkbox" id="media-detail-exact" onchange="onMediaDetailExactChange(this)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
+              <span>${esc(t('exact'))}</span>
+            </label>
+          </form>
+          <div class="seg" id="media-detail-seg">
+            <button type="button" class="seg-btn ${mediaDetailMode === 'title' ? 'active' : ''}" data-mode="title" onclick="setMediaDetailMode('title')">${esc(t('media_mode_title'))}</button>
+            <button type="button" class="seg-btn ${mediaDetailMode === 'content' ? 'active' : ''}" data-mode="content" onclick="setMediaDetailMode('content')">${esc(t('media_mode_content'))}</button>
+          </div>
+        </div>`;
+      const mdQ = document.getElementById('media-detail-q');
+      if (mdQ) {
+        mdQ.addEventListener('compositionstart', () => { isComposing = true; });
+        mdQ.addEventListener('compositionend', () => {
+          isComposing = false;
+          justConfirmed = true;
+          setTimeout(() => { justConfirmed = false; }, 60);
+        });
+        mdQ.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && (e.isComposing || e.keyCode === 229 || isComposing || justConfirmed)) {
+            e.preventDefault();
+            return false;
+          }
+        });
+      }
       document.getElementById('main-loading').style.display = 'flex';
       try {
         const [ep, lib] = await Promise.all([
@@ -2091,10 +2288,16 @@
         ]);
         const it = (lib.items || [])[0];
         if (it) {
+          if (it.media && mediaDetailMedia === 'all') {
+            mediaDetailMedia = it.media;
+            const fEl = document.getElementById('media-detail-filter');
+            if (fEl) fEl.placeholder = t(it.media === 'epub' ? 'media_detail_filter_epub' : 'media_detail_filter_subs');
+          }
           document.getElementById('media-detail-meta').innerHTML =
             `${it.author ? `<div class="muted">${esc(it.author)}</div>` : ''}<div class="media-stats">${statPills(it)}</div>`;
         }
-        renderEpisodesList(ep.files || []);
+        mediaDetailFiles = ep.files || [];
+        renderEpisodesList(mediaDetailFiles);
         const state = readMediaState();
         if (state && state.url === mediaUrl()) {
           document.getElementById('main-loading').style.display = 'none';
@@ -2105,6 +2308,206 @@
         document.getElementById('results').innerHTML = `<div class="error-text">${esc(t('load_failed'))}</div>`;
       } finally {
         document.getElementById('main-loading').style.display = 'none';
+      }
+    }
+
+    function setMediaDetailMode(mode, quiet) {
+      mediaDetailMode = mode === 'content' ? 'content' : 'title';
+      store.set('mediaDetailMode', mediaDetailMode);
+      document.querySelectorAll('#media-detail-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mediaDetailMode));
+      const filterEl = document.getElementById('media-detail-filter');
+      const formEl = document.getElementById('media-detail-form');
+      if (filterEl) filterEl.hidden = mediaDetailMode !== 'title';
+      if (formEl) formEl.hidden = mediaDetailMode !== 'content';
+      if (quiet) return;
+      if (mediaDetailMode === 'title') {
+        if (mediaDetailCtrl) mediaDetailCtrl.abort();
+        mediaDetailGen++;
+        stopSearchEta();
+        document.getElementById('main-loading').style.display = 'none';
+        mediaDetailContentActive = false;
+        filterMediaDetailTitles(filterEl ? filterEl.value : '');
+        if (filterEl) filterEl.focus();
+      } else {
+        const qEl = document.getElementById('media-detail-q');
+        const exactEl = document.getElementById('media-detail-exact');
+        const qVal = qEl ? qEl.value.trim() : '';
+        if (qVal) {
+          runMediaDetailContentSearch(qVal, !!(exactEl && exactEl.checked));
+        } else {
+          renderEpisodesList(mediaDetailFiles);
+        }
+        if (qEl) qEl.focus();
+      }
+      saveMediaState();
+    }
+
+    function onMediaDetailTitleInput() {
+      const filterEl = document.getElementById('media-detail-filter');
+      filterMediaDetailTitles(filterEl ? filterEl.value : '');
+      saveMediaState();
+    }
+
+    function filterMediaDetailTitles(rawNeedle) {
+      const needle = (rawNeedle || '').trim().toLowerCase();
+      if (!needle) {
+        renderEpisodesList(mediaDetailFiles);
+        return;
+      }
+      const matched = mediaDetailFiles.filter(it => (it.title || '').toLowerCase().includes(needle) || (it.file || '').toLowerCase().includes(needle));
+      if (!matched.length) {
+        document.getElementById('results').innerHTML = `<div class="status-line" style="padding:2em;">${esc(t('media_none'))}</div>`;
+        return;
+      }
+      renderEpisodesList(matched);
+    }
+
+    function onMediaDetailContentInput(input) {
+      if (!input.value.trim() && mediaDetailContentActive) {
+        clearMediaDetailContentSearch();
+      }
+    }
+
+    function onMediaDetailExactChange(cb) {
+      const chip = document.getElementById('media-detail-exact-chip');
+      if (chip) chip.classList.toggle('on', cb.checked);
+      const qEl = document.getElementById('media-detail-q');
+      const qVal = qEl ? qEl.value.trim() : '';
+      if (qVal) runMediaDetailContentSearch(qVal, cb.checked);
+    }
+
+    function onMediaDetailContentSubmit(e) {
+      e.preventDefault();
+      if (isComposing || justConfirmed) return;
+      const qEl = document.getElementById('media-detail-q');
+      const exactEl = document.getElementById('media-detail-exact');
+      const qVal = qEl ? qEl.value.trim() : '';
+      if (!qVal) {
+        clearMediaDetailContentSearch();
+        return;
+      }
+      runMediaDetailContentSearch(qVal, !!(exactEl && exactEl.checked));
+    }
+
+    function clearMediaDetailContentSearch() {
+      if (mediaDetailCtrl) mediaDetailCtrl.abort();
+      mediaDetailGen++;
+      stopSearchEta();
+      document.getElementById('main-loading').style.display = 'none';
+      mediaDetailContentActive = false;
+      renderEpisodesList(mediaDetailFiles);
+      saveMediaState();
+    }
+
+    const MEDIA_DETAIL_PAGE = 500;
+    let mediaDetailSentinelObs = null;
+
+    function appendMediaDetailMatches(results, q) {
+      const container = document.getElementById('results');
+      const order = new Map(mediaDetailFiles.map((it, i) => [it.file, i]));
+      const byFile = new Map();
+      for (const r of results) {
+        if (!byFile.has(r.file)) byFile.set(r.file, []);
+        byFile.get(r.file).push(r);
+      }
+      for (const [fileKey, rows] of byFile) {
+        const safeFile = encodeURIComponent(fileKey);
+        let card = [...container.querySelectorAll('.episode-card')].find(c => c.dataset.file === safeFile);
+        if (!card) {
+          const item = mediaDetailFiles[order.get(fileKey)] || { file: fileKey, title: (rows[0] && rows[0].title) || fileKey };
+          const fileHash = btoa(unescape(encodeURIComponent(fileKey))).substring(0, 32).replace(/=/g, '');
+          const tpl = document.createElement('template');
+          tpl.innerHTML = `
+            <div class="card episode-card" id="ep-card-${fileHash}" data-file="${safeFile}">
+                <div class="episode-header" data-file="${safeFile}" onclick="expandEpisode(this)">
+                    <div class="episode-title">${esc(item.title)}</div>
+                    <div class="episode-toggle-icon">▼</div>
+                </div>
+                <div class="episode-content"></div>
+            </div>`.trim();
+          card = tpl.content.firstChild;
+          const idx = order.has(fileKey) ? order.get(fileKey) : Infinity;
+          const next = [...container.querySelectorAll('.episode-card')].find(c => {
+            const j = order.get(decodeURIComponent(c.dataset.file));
+            return (j === undefined ? Infinity : j) > idx;
+          });
+          container.insertBefore(card, next || container.querySelector('.md-tail, .md-sentinel'));
+        }
+        card.querySelector('.episode-content').insertAdjacentHTML('beforeend', renderBrowseLinesHTML(rows, q));
+      }
+    }
+
+    function addMediaDetailSentinel(qs, offset, gen) {
+      const container = document.getElementById('results');
+      const sentinel = document.createElement('div');
+      sentinel.className = 'md-sentinel';
+      sentinel.innerHTML = '<div class="spinner" style="margin:20px auto;"></div>';
+      container.insertBefore(sentinel, container.querySelector('.md-tail'));
+      if (mediaDetailSentinelObs) mediaDetailSentinelObs.disconnect();
+      mediaDetailSentinelObs = new IntersectionObserver(async (entries) => {
+        if (!entries.some(e => e.isIntersecting)) return;
+        mediaDetailSentinelObs.disconnect();
+        const next = new URLSearchParams(qs);
+        next.set('offset', String(offset));
+        try {
+          const res = await fetch(apiSearchUrl(next.toString()), { signal: mediaDetailCtrl.signal });
+          const data = await res.json();
+          if (gen !== mediaDetailGen || data.aborted) return;
+          sentinel.remove();
+          appendMediaDetailMatches(data.results || [], qs.get('q'));
+          if (data.has_more) addMediaDetailSentinel(qs, offset + MEDIA_DETAIL_PAGE, gen);
+        } catch (e) {
+          if (e.name !== 'AbortError' && gen === mediaDetailGen) {
+            sentinel.innerHTML = `<div class="error-text" style="padding:1em;">${esc(t('error'))}</div>`;
+          }
+        }
+      }, { rootMargin: '800px 0px 800px 0px' });
+      mediaDetailSentinelObs.observe(sentinel);
+    }
+
+    async function runMediaDetailContentSearch(q, exact) {
+      if (mediaDetailSentinelObs) mediaDetailSentinelObs.disconnect();
+      if (mediaDetailCtrl) mediaDetailCtrl.abort();
+      mediaDetailCtrl = new AbortController();
+      const gen = ++mediaDetailGen;
+      const resultsContainer = document.getElementById('results');
+      resultsContainer.innerHTML = '';
+      document.getElementById('main-loading').style.display = 'flex';
+      const qs = new URLSearchParams({
+        q,
+        folder: mediaDetailFolder,
+        media: mediaDetailMedia,
+        sort: 'chrono',
+        limit: String(MEDIA_DETAIL_PAGE),
+        offset: '0',
+      });
+      if (exact) qs.set('exact', 'on');
+      startSearchEta(qs.toString(), gen);
+      try {
+        const res = await fetch(apiSearchUrl(qs.toString()), { signal: mediaDetailCtrl.signal });
+        const data = await res.json();
+        if (gen !== mediaDetailGen || data.aborted) return;
+        mediaDetailContentActive = true;
+        if (!(data.results || []).length) {
+          resultsContainer.innerHTML = `<div class="status-line" style="padding:2em;">${esc(t('no_results'))}</div>`;
+          saveMediaState();
+          return;
+        }
+        hasMoreResults = false;
+        if (loadMoreObserver) loadMoreObserver.disconnect();
+        appendMediaDetailMatches(data.results, q);
+        resultsContainer.insertAdjacentHTML('beforeend', '<div class="md-tail" style="height: 4em; width: 100%;"></div>');
+        if (data.has_more) addMediaDetailSentinel(qs, MEDIA_DETAIL_PAGE, gen);
+        saveMediaState();
+      } catch (e) {
+        if (e.name !== 'AbortError' && gen === mediaDetailGen) {
+          resultsContainer.innerHTML = `<div class="error-text" style="padding:1em;">${esc(t('error'))}</div>`;
+        }
+      } finally {
+        if (gen === mediaDetailGen) {
+          stopSearchEta();
+          document.getElementById('main-loading').style.display = 'none';
+        }
       }
     }
 
@@ -2184,12 +2587,12 @@
        } catch(e) {}
     }
 
-    function renderBrowseLinesHTML(results) {
+    function renderBrowseLinesHTML(results, origQ = '') {
         let linesHtml = '';
         results.forEach(r => {
             const rId = lineId(r.line);
             const isSaved = savedSentences.some(s => s.id === rId);
-            const savedItemData = {...r, id: rId, original_q: ''};
+            const savedItemData = {...r, id: rId, original_q: origQ};
             linesHtml += `
               <div class="episode-line">
                   <span class="main-sentence">${r.display_line}</span>
@@ -2205,6 +2608,24 @@
 
     let libPoll = null;
     let libWasRunning = false;
+    let libLast = null;
+    let figPoll = null;
+
+    function pollFigures() {
+      if (figPoll) return;
+      figPoll = setInterval(async () => {
+        let f;
+        try { f = await fetch('/api/library/figures').then(r => r.json()); } catch (e) { return; }
+        if (!libLast) return;
+        Object.assign(libLast, f);
+        for (const [which, disk, indexed, path] of [['subs', f.subs_disk, libLast.subs_indexed, libLast.subs_dir],
+                                                    ['books', f.books_disk, libLast.books_indexed, libLast.books_dir]]) {
+          const box = document.querySelector(`#lib-card-${which} .lib-facts`);
+          if (box) box.innerHTML = folderFacts(which, path, disk, indexed, f.counting);
+        }
+        if (!f.counting) { clearInterval(figPoll); figPoll = null; pollActivity(); }
+      }, 500);
+    }
 
     async function initLibraryTab() {
       setTitle(t('tab_library'));
@@ -2217,8 +2638,10 @@
       try { lib = await fetch('/api/library').then(r => r.json()); }
       catch (e) { document.getElementById('lib-folders').innerHTML = `<div class="error-text">${esc(t('load_failed'))}</div>`; return; }
       document.getElementById('lib-folders').innerHTML =
-        folderCard('subs', t('lib_subs'), lib.subs_dir, lib.subs_disk, lib.subs_indexed) +
-        folderCard('books', t('lib_books'), lib.books_dir, lib.books_disk, lib.books_indexed);
+        folderCard('subs', t('lib_subs'), lib.subs_dir, lib.subs_disk, lib.subs_indexed, lib.counting) +
+        folderCard('books', t('lib_books'), lib.books_dir, lib.books_disk, lib.books_indexed, lib.counting);
+      libLast = lib;
+      if (lib.counting) pollFigures();
       folderPicker = !!lib.folder_picker;
       renderOutdated(lib);
       renderDbCard(lib);
@@ -2227,23 +2650,28 @@
       if (lib.index && lib.index.running) startPolling();
     }
 
-    function folderCard(which, title, path, disk, indexed) {
+    function folderFacts(which, path, disk, indexed, counting) {
       const isSubs = which === 'subs';
       let facts = '';
       if (path == null) {
         facts = `<div>${esc(t('lib_not_set'))}</div>`;
       } else if (!disk) {
-        facts = `<div class="warn">${esc(t('lib_missing'))}</div>`;
+        facts = counting ? `<div>${esc(t('lib_counting'))}</div>` : `<div class="warn">${esc(t('lib_missing'))}</div>`;
       } else {
-        facts += `<div>${esc(t(isSubs ? 'lib_disk_subs' : 'lib_disk_books', { n: fmt(disk.files) }))}</div>`;
+        const more = disk.counting ? ' ' + esc(t('lib_counting')) : '';
+        facts += `<div>${esc(t(isSubs ? 'lib_disk_subs' : 'lib_disk_books', { n: fmt(disk.files) }))}${more}</div>`;
         if (disk.other) facts += `<div>${esc(t('lib_other', { n: fmt(disk.other) }))}</div>`;
         if (disk.filtered) facts += `<div>${esc(t('lib_filtered', { n: fmt(disk.filtered) }))}</div>`;
       }
       facts += `<div>${esc(t(isSubs ? 'lib_indexed_subs' : 'lib_indexed_books', { files: fmt(indexed.files), rows: fmt(indexed.rows) }))}</div>`;
+      return facts;
+    }
+
+    function folderCard(which, title, path, disk, indexed, counting) {
       return `<div class="lib-card" id="lib-card-${which}">
         <h3>${esc(title)}</h3>
         ${path == null ? '' : `<span class="path">${esc(path)}</span>`}
-        <div class="facts">${facts}</div>
+        <div class="facts lib-facts">${folderFacts(which, path, disk, indexed, counting)}</div>
         <div class="lib-edit" hidden>
           <input type="text" value="${esc(path ?? '')}" placeholder="${esc(t('lib_change_hint'))}" spellcheck="false">
           <div class="btns">
@@ -2351,6 +2779,34 @@
           ${lib.db_is_default ? '' : `<button class="btn" onclick="moveDatabases('default')">${esc(t('lib_db_default'))}</button>`}
         </div>
         <div class="lib-msg facts" style="margin:0.5em 0 0;"></div>`;
+      renderCacheCard(lib.search_cache);
+    }
+
+    function renderCacheCard(c, msg) {
+      c = c || { entries: 0, bytes: 0, on: false };
+      document.getElementById('lib-cache').innerHTML = `
+        <h3>${esc(t('lib_cache_title'))}</h3>
+        <div class="facts"><div>${esc(t('lib_cache_lead'))}</div>
+          <div>${esc(t('lib_cache', { n: fmt(c.entries), size: fmtBytes(c.bytes) }))}</div></div>
+        <div class="btns" style="align-items:center;">
+          <div class="seg" style="width:12em;">
+            <button type="button" class="seg-btn ${c.on ? '' : 'active'}" onclick="setSearchCache(false)">${esc(t('lib_cache_off'))}</button>
+            <button type="button" class="seg-btn ${c.on ? 'active' : ''}" onclick="setSearchCache(true)">${esc(t('lib_cache_on'))}</button>
+          </div>
+          <button class="btn" onclick="clearSearchCache()">${esc(t('lib_cache_clear'))}</button>
+        </div>
+        <div class="lib-msg facts" style="margin:0.5em 0 0;">${msg ? esc(msg) : ''}</div>`;
+    }
+
+    async function setSearchCache(on) {
+      const res = await apiPost('/api/search-cache', { on }).catch(() => ({}));
+      if (res.search_cache) renderCacheCard(res.search_cache);
+    }
+
+    async function clearSearchCache() {
+      document.querySelectorAll('#lib-cache button').forEach(b => b.disabled = true);
+      const res = await apiPost('/api/search-cache/clear', {}).catch(() => ({}));
+      renderCacheCard(res.search_cache, res.ok ? t('lib_cache_cleared') : '');
     }
 
     function toggleDbEdit(on) {
@@ -2572,6 +3028,7 @@
       const res = await apiPost('/api/index', body).catch(() => null);
       if (res) renderIndexStatus(res);
       startPolling();
+      pollActivity();
     }
 
     let anPoll = null;
@@ -2582,6 +3039,7 @@
       const res = await apiPost('/api/library/analyse', only ? { only } : {}).catch(() => null);
       if (res) renderAnalysisStatus(res);
       pollAnalysis();
+      pollActivity();
     }
 
     function pollAnalysis() {
@@ -2590,7 +3048,7 @@
         let d;
         try { d = await fetch('/api/library/analysis').then(r => r.json()); } catch (e) { return; }
         renderAnalysisStatus(d.status);
-        if (!d.status.running) { clearInterval(anPoll); anPoll = null; renderAnalysis(d); }
+        if (!d.status.running) { clearInterval(anPoll); anPoll = null; renderAnalysis(d); pollActivity(); }
       }, 700);
     }
 
@@ -2644,7 +3102,7 @@
       const rows = list.map((f, i) => `<label class="an-row"><input type="checkbox" class="an-unpick" value="${i}">
         <span class="name">${esc(t('an_stage_' + f.media))} · ${esc(f.name)}${f.exists ? '' : ' ' + esc(t('an_missing'))}</span>
         <span class="why">${esc(t('an_reason_' + f.reason))}${f.keep ? ' · ' + esc(t('an_kept_is', { keep: f.keep.split(/[\\/]/).pop() })) : ''}</span></label>`).join('');
-      return `<details class="an-section" ${list.length <= 50 ? 'open' : ''}>
+      return `<details class="an-section">
           <summary>${esc(t('an_filtered_title'))} (${fmt(list.length)})</summary>
           <div class="an-list">${rows}</div></details>
         <div class="btns"><button class="btn" onclick="unfilterPicked()">${esc(t('an_unfilter'))}</button></div>`;
@@ -2677,7 +3135,7 @@
           } else {
             rows = list.map(anRow).join('');
           }
-          html += `<details class="an-section" ${list.length <= 50 ? 'open' : ''}>
+          html += `<details class="an-section">
             <summary>${esc(t('an_stage_' + media))} · ${esc(t('an_reason_' + reason))} (${fmt(list.length)})</summary>
             <div class="an-list">${rows}</div></details>`;
         }
@@ -2733,6 +3191,7 @@ function startPolling() {
         renderIndexStatus(s);
         if (!s.running) {
           clearInterval(libPoll); libPoll = null;
+          pollActivity();
           refreshLibrary();
         }
       }, 500);
@@ -2828,7 +3287,7 @@ function startPolling() {
           <li><b>除外</b> — 頭に <code>-</code> を付けた語を含む文は除かれます（例: <code>食べる -肉</code>）。</li>
           <li><b>並べ替え</b> — おすすめ（読みやすい長さ順）、時系列順、長い順、短い順、ランダム。選んだ並べ替えは次回も使われます。</li>
           <li><b>両方 / 字幕 / 書籍</b> — サイドバーの上のボタンで、検索対象を切り替えます。これも記憶されます。</li>
-          <li><b>作品で絞り込む</b> — サイドバーの作品名を押すと、その作品の中だけを検索します。</li>
+          <li><b>作品で絞り込む</b> — サイドバーの作品名を押すと、その作品の中だけを検索します。いくつでも選べ、もう一度押すと外れます。</li>
         </ul>
 
         <h2>例文の操作</h2>
@@ -2888,7 +3347,7 @@ Books folder/
           <li><b>Exclude</b> sentences containing a word by putting <code>-</code> in front of it (<code>食べる -肉</code>).</li>
           <li><b>Sort</b>: recommended (easy-to-read lengths first), chronological, longest, shortest, random. Your choice is remembered.</li>
           <li><b>All / Subs / Books</b>: the buttons at the top of the sidebar choose what to search. Also remembered.</li>
-          <li><b>Filter by title</b>: click a title in the sidebar to search inside it only.</li>
+          <li><b>Filter by title</b>: click a title in the sidebar to search inside it only. You can pick several; click one again to remove it.</li>
         </ul>
 
         <h2>Sentence buttons</h2>
@@ -2913,9 +3372,37 @@ Books folder/
     };
     function initGuideTab() {
       setTitle(t('tab_guide'));
-      document.getElementById('guide-body').innerHTML = GUIDE[LANG] +
-        `<p style="margin-top:2em;"><button class="btn" onclick="openWelcome()">${esc(t('welcome_again'))}</button></p>`;
+      document.getElementById('guide-body').innerHTML =
+        `<div class="guide-top"><span class="guide-version">Aobana ${esc(APP_VERSION)}</span>` +
+        `<button class="btn" onclick="openChangelog()">${esc(t('changelog'))}</button>` +
+        `<button class="btn" onclick="openWelcome()">${esc(t('welcome_again'))}</button></div>` + GUIDE[LANG];
     }
+
+    let activityTimer = null;
+    async function pollActivity() {
+      clearTimeout(activityTimer);
+      let a = null;
+      try { a = await fetch('/api/activity').then(r => r.json()); } catch (e) {}
+      if (a) renderNotices(a.notices || []);
+      const busy = a && (a.index || a.check || a.figures);
+      activityTimer = setTimeout(pollActivity, busy ? 1000 : 5000);
+    }
+    function noticeText(n) {
+      const state = n.error ? '_error' : (n.stopped ? '_stopped' : '');
+      return t(`notice_${n.kind}${n.kind === 'figures' ? '' : state}`, { time: fmtDuration(n.seconds) });
+    }
+    function renderNotices(list) {
+      const box = document.getElementById('task-notices');
+      box.innerHTML = list.map(n => `<div class="task-notice${n.error ? ' warn' : ''}" role="status">
+          <span>${esc(noticeText(n))}</span>
+          <button class="btn" type="button" onclick="dismissNotice(${Number(n.id)}, this)">${esc(t('close'))}</button>
+        </div>`).join('');
+    }
+    async function dismissNotice(id, btn) {
+      btn.closest('.task-notice').remove();
+      await apiPost('/api/activity/dismiss', { id }).catch(() => {});
+    }
+    document.addEventListener('DOMContentLoaded', pollActivity);
 
     function openWelcome() {
       const m = document.getElementById('welcome-modal');
@@ -3087,6 +3574,42 @@ Books folder/
       m.querySelector('#whatsnew-sub').hidden = !items.length;
       m.querySelector('#whatsnew-none').hidden = !!items.length;
       if (notes && notes.url) m.querySelector('#whatsnew-more').href = notes.url;
+    }
+    function mdChangelog(text) {
+      const out = []; let item = null, para = null;
+      const flush = () => {
+        if (item !== null) { out.push(`<li>${mdInline(item)}</li>`); item = null; }
+        if (para !== null) { out.push(`<p>${mdInline(para)}</p>`); para = null; }
+      };
+      let inList = false;
+      for (const line of text.split(/\r?\n/)) {
+        const h = line.match(/^(#{1,3})\s+(.*)$/);
+        if (h) { flush(); if (inList) { out.push('</ul>'); inList = false; }
+                 if (h[1].length > 1) out.push(`<h3 class="whatsnew-sub">${mdInline(h[2])}</h3>`); continue; }
+        if (line.startsWith('- ')) { flush(); if (!inList) { out.push('<ul class="whatsnew-list">'); inList = true; }
+                                     item = line.slice(2).trim(); continue; }
+        if (!line.trim()) { flush(); continue; }
+        if (item !== null) item += ' ' + line.trim();
+        else { if (inList) { out.push('</ul>'); inList = false; } para = (para ? para + ' ' : '') + line.trim(); }
+      }
+      flush(); if (inList) out.push('</ul>');
+      return out.join('');
+    }
+    async function openChangelog() {
+      const m = document.getElementById('changelog-modal');
+      m.querySelector('#changelog-body').innerHTML = '';
+      m.querySelector('#changelog-lang').hidden = !t('changelog_lang');
+      m.classList.add('open');
+      document.documentElement.style.overflow = 'hidden';
+      let data = null;
+      try { data = await (await fetch('/api/changelog')).json(); } catch (e) {}
+      m.querySelector('#changelog-body').innerHTML = data && data.text
+        ? mdChangelog(data.text) : `<p>${esc(t('changelog_none'))}</p>`;
+      if (data && data.url) m.querySelector('#changelog-more').href = data.url;
+    }
+    function closeChangelog() {
+      document.getElementById('changelog-modal').classList.remove('open');
+      document.documentElement.style.overflow = '';
     }
     function closeWhatsNew() {
       document.getElementById('whatsnew-modal').classList.remove('open');
@@ -3300,7 +3823,7 @@ Books folder/
       }
       document.getElementById('sort-input').value = SORT;
       document.getElementById('media-input').value = MEDIA;
-      document.getElementById('hidden-folder').value = currentFolder || '';
+      syncHiddenFolders();
       const qInput = document.querySelector('input[name="q"]');
       qInput.value = PARAMS.get('q') || '';
       const exact = document.getElementById('exact-check');
@@ -3514,8 +4037,6 @@ Books folder/
           exactCheck.checked = true;
         }
       }
-      const folderInput = document.getElementById('hidden-folder');
-      if (folderInput && !folderInput.value) folderInput.disabled = true;
 
       const qVal = qInput.value.trim();
       if (qVal) {
@@ -3524,7 +4045,7 @@ Books folder/
         if (exactCheck && exactCheck.checked) p.set('exact', 'on');
         if (SORT) p.set('sort', SORT);
         if (MEDIA && MEDIA !== 'all') p.set('media', MEDIA);
-        if (folderInput && !folderInput.disabled && folderInput.value) p.set('folder', folderInput.value);
+        currentFolders.forEach(f => p.append('folder', f));
         const searchUrl = '/?' + p.toString();
         store.set('aobana_last_search', searchUrl);
       }
@@ -3569,6 +4090,8 @@ Books folder/
         if (welcome && welcome.classList.contains('open')) { closeWelcome(false); return; }
         const reset = document.getElementById('reset-modal');
         if (reset && reset.classList.contains('open')) { closeReset(false); return; }
+        const changelog = document.getElementById('changelog-modal');
+        if (changelog && changelog.classList.contains('open')) { closeChangelog(); return; }
         document.querySelectorAll('.dd.open').forEach(d => d.classList.remove('open'));
         setMenu(false);
       }
@@ -3578,8 +4101,8 @@ Books folder/
       }
 
       if ((e.key === 'q' || e.key === 'Q' || e.code === 'KeyQ') && !isInputActive && !e.shiftKey) {
-        const qInput = document.querySelector('input[name="q"]');
-        if (qInput && qInput.offsetParent !== null) {
+        const qInput = [document.querySelector('input[name="q"]'), document.getElementById('media-detail-q'), document.getElementById('media-detail-filter'), document.getElementById('media-filter')].find(el => el && el.offsetParent !== null);
+        if (qInput) {
           e.preventDefault();
           qInput.focus();
           qInput.select();
@@ -3689,7 +4212,7 @@ Books folder/
     </div>
     <div class="main-content">
       <form method="GET" class="search-bar" autocomplete="off" action="/" onsubmit="handleSearchSubmit(event, this)">
-        <input type="hidden" name="folder" id="hidden-folder" value="">
+        <span id="hidden-folders" hidden></span>
         <div class="search-input-wrap">
           <input name="q" class="search-input" data-i18n-placeholder="placeholder" placeholder="検索" value="" autofocus autocomplete="off" spellcheck="false" />
           <span class="search-btn-box">
@@ -3792,6 +4315,7 @@ Books folder/
         <div id="an-report"></div>
       </div>
       <div class="lib-card" id="lib-data" style="margin-top:1.5em;"></div>
+      <div class="lib-card" id="lib-cache" style="margin-top:1em;"></div>
       <div class="lib-card" id="lib-favorites" style="margin-top:1.5em;">
         <h3 data-i18n="fav_title">お気に入りの書き出し・読み込み</h3>
         <p class="muted" data-i18n="fav_lead" style="margin:0 0 0.8em; font-size:0.9em;"></p>
@@ -3941,6 +4465,20 @@ Books folder/
       </div>
     </div>
   </div>
+
+  <div class="modal-overlay" id="changelog-modal" onclick="if (event.target === this) closeChangelog()">
+    <div class="modal-card welcome big changelog-card">
+      <h2 data-i18n="changelog">変更履歴</h2>
+      <p id="changelog-lang" data-i18n="changelog_lang" hidden></p>
+      <div id="changelog-body"></div>
+      <div class="btns">
+        <a class="btn" id="changelog-more" href="https://github.com/Wyzmic/aobana/releases" target="_blank" rel="noopener" data-i18n="whatsnew_more">詳しく見る</a>
+        <button class="btn primary" type="button" onclick="closeChangelog()" data-i18n="close">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="task-notices" aria-live="polite"></div>
 
   <div id="sidebar-tooltip" class="sidebar-tooltip" role="tooltip"></div>
 </body>

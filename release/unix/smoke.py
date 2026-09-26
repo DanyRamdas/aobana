@@ -106,9 +106,10 @@ def main(cmd):
         print(f"smoke: /api/update current {update['current']}, latest {update['latest']}")
         page = urllib.request.urlopen(BASE + "/", timeout=10).read().decode("utf-8")
         ok = bool(subs_hits) and bool(book_hits) and "露草" in page
-        stray = [n for n in ("subs.db", "epub.db") if not os.path.exists(os.path.join(env["AOBANA_DATA_DIR"], n))]
+        stray = [n for n in ("subs.db", "epub.db")
+                 if not os.path.exists(os.path.join(env["AOBANA_DATA_DIR"], "db", n))]
         if stray:
-            print(f"smoke: {stray} not in the data folder: the build does not use the installed layout")
+            print(f"smoke: {stray} not in the data folder's db folder: the build does not use the installed layout")
             ok = False
     finally:
         if os.name == "nt":

@@ -11,9 +11,9 @@ AOBANA_DIR="${AOBANA_DIR:-/storage/emulated/0/Aobana}"
 TARBALL="https://codeload.github.com/Wyzmic/aobana/tar.gz/refs/heads/main"
 DISTRO="aobana"
 PHONE_FILES="app.py engine.py utils.py paths.py library.py analyser.py indexer.py epub_indexer.py folder_picker.py updater.py index.html
-requirements.txt LICENSE THIRD_PARTY_NOTICES.md data/ruby static"
+requirements.txt LICENSE THIRD_PARTY_NOTICES.md CHANGELOG.md data/ruby static"
 OLD_CLONE_FILES=".git .gitattributes .gitignore assets release termux Aobana.bat aobana.sh
-launcher.py README.md README.ja.md CHANGELOG.md"
+launcher.py README.md README.ja.md"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
 say() { printf '\n== %s\n' "$1"; }
@@ -88,7 +88,7 @@ cat <<EOF
 
 Aobana is installed.
 
-  1. Put the index in $AOBANA_DIR: copy subs.db and epub.db from a PC (fastest), or put
+  1. Put the index in $AOBANA_DIR/data/db: copy subs.db and epub.db from a PC (fastest), or put
      subtitles in content/Subtitles and books in content/Books there and press "Index library"
      in the Library tab (slow on a phone).
   2. Add the Termux:Widget widget to your home screen and tap "Aobana".

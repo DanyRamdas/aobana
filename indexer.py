@@ -14,7 +14,7 @@ PROGRESS = os.environ.get("AOBANA_PROGRESS") == "1"
 
 _TOKENIZER = None
 mode = tokenizer.Tokenizer.SplitMode.A
-SUDACHI_MAX_BYTES = 49149
+from utils import SUDACHI_MAX_BYTES
 
 
 def get_tokenizer():
@@ -28,6 +28,7 @@ from utils import (
     ALPHA_CHARS, ALPHA_PATTERN, RUBY_BASE_RE, RUBY_RE,
     norm_relpath, INDEX_FORMAT, ensure_format_column, compact_if_worth, stop_requested, sub_relpath, write_tokenizer_meta, ruby_index_extras, parallel_map,
     strip_chinese_chunks, is_chinese_text, filtered_names,
+    ensure_line_lengths, has_line_lengths, write_line_lengths, drop_orphan_lengths,
 )
 
 HTML_TAG_RE = re.compile(r'</?(?:i|b|u|s|font)[^>]*>', re.IGNORECASE)
@@ -459,6 +460,7 @@ def run_indexer(force=False, outdated=False):
         if force:
             print("Force rebuild requested. Dropping existing tables...")
             conn.execute("DROP TABLE IF EXISTS subtitles")
+            conn.execute("DROP TABLE IF EXISTS line_lengths")
             conn.execute("DROP TABLE IF EXISTS sources")
             conn.commit()
 
@@ -479,6 +481,7 @@ def run_indexer(force=False, outdated=False):
         except sqlite3.OperationalError:
             print("Old database schema detected. Rebuilding FTS table...")
             conn.execute("DROP TABLE IF EXISTS subtitles")
+            conn.execute("DROP TABLE IF EXISTS line_lengths")
             conn.execute("DELETE FROM sources")
 
         conn.execute('''
@@ -505,6 +508,10 @@ def run_indexer(force=False, outdated=False):
             if n_old:
                 print(f"OUTDATED {n_old}")
         top = conn.execute("SELECT rowid FROM subtitles ORDER BY rowid DESC LIMIT 1").fetchone()
+        if top and not has_line_lengths(conn):
+            print("LENGTHS building the display-length table (once, reads the whole index)...", flush=True)
+        ensure_line_lengths(conn, DB_PATH, "subtitles", "subs", paths.index_workers())
+        lengths = has_line_lengths(conn)
         floor = top[0] if top else 0
         next_rowid = floor + 1
         replaced = []
@@ -598,6 +605,8 @@ def run_indexer(force=False, outdated=False):
                 "INSERT INTO subtitles(rowid, source_id, file, line, clean_text, base_forms, readings) VALUES (?, ?, ?, ?, ?, ?, ?);",
                 [(next_rowid + i, source_id, relpath) + r for i, r in enumerate(rows)]
             ).rowcount
+            if lengths:
+                write_line_lengths(conn, ((next_rowid + i, r[0]) for i, r in enumerate(rows)), "subs")
             next_rowid += len(rows)
             print(f"Indexed: {relpath.encode('cp932', 'replace').decode('cp932')}")
             pending += 1
@@ -612,6 +621,9 @@ def run_indexer(force=False, outdated=False):
             deleted_rows += conn.execute("DELETE FROM subtitles WHERE source_id = ?", (source_id,)).rowcount
             conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
             print(f"Removed {'filtered' if relpath in filtered else 'deleted'} file: {relpath}")
+
+        if deleted_rows and lengths:
+            drop_orphan_lengths(conn, "subtitles")
 
         ident = write_tokenizer_meta(conn, 0)
         if new_or_updated:

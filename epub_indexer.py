@@ -29,7 +29,7 @@ PROGRESS = os.environ.get("AOBANA_PROGRESS") == "1"
 
 _TOKENIZER = None
 mode = tokenizer.Tokenizer.SplitMode.A
-SUDACHI_MAX_BYTES = 49149
+from utils import SUDACHI_MAX_BYTES, sudachi_pieces as _sudachi_pieces
 
 
 def get_tokenizer():
@@ -55,6 +55,8 @@ _EXCLUDED_LOG = []
 
 from utils import convert_hw_katakana, EPUB_STR_REPLACEMENTS, katakana_to_hiragana
 from utils import normalize_cjk_spacing, book_title_and_author
+from utils import ensure_chapters, chapter_spans, has_chapters
+from utils import ensure_line_lengths, has_line_lengths, write_line_lengths
 
 _RE_REPLACEMENTS = [
     (re.compile(r'＠ルビ.*?［(.+?)[｜|](.+?)］＠'), r'｜\1(\2)'),
@@ -293,20 +295,6 @@ def split_japanese_sentences(text: str):
 
 def get_clean_text_for_mecab(line: str) -> str:
     return BOOK_RUBY_RE.sub(r'\1\2', line)
-
-def _sudachi_pieces(text: str):
-    if len(text.encode('utf-8')) <= SUDACHI_MAX_BYTES:
-        return [text]
-    pieces, buf, size = [], [], 0
-    for ch in text:
-        n = len(ch.encode('utf-8'))
-        if size + n > SUDACHI_MAX_BYTES:
-            pieces.append(''.join(buf))
-            buf, size = [], 0
-        buf.append(ch)
-        size += n
-    pieces.append(''.join(buf))
-    return pieces
 
 def analyze_with_sudachi(clean_text: str):
     base_forms = []
@@ -1042,6 +1030,8 @@ def run_epub_indexer(force=False, outdated=False):
             print("Force rebuild requested. Dropping existing tables in epub.db...")
             conn.execute("DROP TABLE IF EXISTS epubs")
             conn.execute("DROP TABLE IF EXISTS sources")
+            conn.execute("DROP TABLE IF EXISTS chapters")
+            conn.execute("DROP TABLE IF EXISTS line_lengths")
             conn.commit()
 
         conn.execute('''
@@ -1070,6 +1060,15 @@ def run_epub_indexer(force=False, outdated=False):
 
         ensure_format_column(conn)
         conn.commit()
+        top = conn.execute("SELECT rowid FROM epubs ORDER BY rowid DESC LIMIT 1").fetchone()
+        if top and not has_chapters(conn):
+            print("CHAPTERS building the chapter table (once, reads the whole index)...", flush=True)
+        if ensure_chapters(conn) and top:
+            print(f"CHAPTERS {conn.execute('SELECT COUNT(*) FROM chapters').fetchone()[0]} chapters", flush=True)
+        if top and not has_line_lengths(conn):
+            print("LENGTHS building the display-length table (once, reads the whole index)...", flush=True)
+        ensure_line_lengths(conn, DB_PATH, "epubs", "epub", paths.index_workers())
+        lengths = has_line_lengths(conn)
         cur = conn.execute("SELECT id, relpath, file_hash, index_format FROM sources")
         existing_files = {row['relpath']: {'id': row['id'], 'hash': None if outdated and row['index_format'] < INDEX_FORMAT['epub'] else row['file_hash']}
                           for row in cur}
@@ -1078,18 +1077,30 @@ def run_epub_indexer(force=False, outdated=False):
             n_old = sum(1 for v in existing_files.values() if v['hash'] is None)
             if n_old:
                 print(f"OUTDATED {n_old}")
-        top = conn.execute("SELECT rowid FROM epubs ORDER BY rowid DESC LIMIT 1").fetchone()
         floor = top[0] if top else 0
         next_rowid = floor + 1
         replaced = []
 
+        def old_spans(source_id):
+            spans = conn.execute("SELECT first_rowid, last_rowid FROM chapters WHERE source_id = ?",
+                                 (source_id,)).fetchall()
+            conn.execute("DELETE FROM chapters WHERE source_id = ?", (source_id,))
+            return spans
+
+        def delete_rows(source_id, spans):
+            n = 0
+            for a, b in spans:
+                n += conn.execute("DELETE FROM epubs WHERE rowid BETWEEN ? AND ? AND source_id = ?",
+                                  (a, min(b, floor), source_id)).rowcount
+                if lengths:
+                    conn.execute("DELETE FROM line_lengths WHERE rowid BETWEEN ? AND ?", (a, min(b, floor)))
+            return n
+
         def flush():
             nonlocal deleted_rows
-            if replaced:
-                marks = ",".join("?" * len(replaced))
-                deleted_rows += conn.execute(f"DELETE FROM epubs WHERE rowid <= ? AND source_id IN ({marks})",
-                                             [floor] + replaced).rowcount
-                replaced.clear()
+            for source_id, spans in replaced:
+                deleted_rows += delete_rows(source_id, spans)
+            replaced.clear()
             conn.commit()
 
         current_disk_files = set()
@@ -1142,7 +1153,7 @@ def run_epub_indexer(force=False, outdated=False):
             old = existing_files.get(relpath)
             if kind == 'error':
                 if old:
-                    deleted_rows += conn.execute("DELETE FROM epubs WHERE source_id = ?", (old['id'],)).rowcount
+                    deleted_rows += delete_rows(old['id'], old_spans(old['id']))
                     conn.execute("DELETE FROM sources WHERE id = ?", (old['id'],))
                 failed += 1
                 print(f"FAILED {relpath}: {payload}")
@@ -1154,7 +1165,7 @@ def run_epub_indexer(force=False, outdated=False):
                 meta_written = True
             if old:
                 source_id = old['id']
-                replaced.append(source_id)
+                replaced.append((source_id, old_spans(source_id)))
                 conn.execute("UPDATE sources SET file_hash = ?, indexed_at = ?, index_format = ? WHERE id = ?",
                              (file_hash, datetime.now(), INDEX_FORMAT['epub'], source_id))
             else:
@@ -1168,6 +1179,10 @@ def run_epub_indexer(force=False, outdated=False):
                 "INSERT INTO epubs(rowid, source_id, file, line, clean_text, base_forms, readings) VALUES (?, ?, ?, ?, ?, ?, ?);",
                 [(next_rowid + i, source_id) + r for i, r in enumerate(rows)]
             ).rowcount
+            conn.executemany("INSERT INTO chapters VALUES (?, ?, ?, ?, ?)",
+                             chapter_spans((next_rowid + i, source_id, r[0]) for i, r in enumerate(rows)))
+            if lengths:
+                write_line_lengths(conn, ((next_rowid + i, r[1]) for i, r in enumerate(rows)), "epub")
             next_rowid += len(rows)
             print(f"Indexed EPUB: {title} by {author} ({len(rows)} sentences in {n_chapters} chapters)")
             pending += 1
@@ -1179,7 +1194,7 @@ def run_epub_indexer(force=False, outdated=False):
         deleted_files = set(existing_files.keys()) - current_disk_files
         for relpath in deleted_files:
             source_id = existing_files[relpath]['id']
-            deleted_rows += conn.execute("DELETE FROM epubs WHERE source_id = ?", (source_id,)).rowcount
+            deleted_rows += delete_rows(source_id, old_spans(source_id))
             conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
             print(f"Removed {'filtered' if relpath in filtered else 'deleted'} EPUB: {relpath}")
 

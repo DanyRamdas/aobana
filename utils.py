@@ -1,6 +1,9 @@
+import functools
 import hashlib
 import os
 import re
+import shutil
+import sqlite3
 import unicodedata
 from datetime import datetime
 
@@ -648,6 +651,175 @@ def compact_index(conn, table):
     print(f"COMPACTED {table}")
 
 
+CHAPTERS_SCHEMA = (
+    "CREATE TABLE chapters (source_id INTEGER NOT NULL, file TEXT NOT NULL, "
+    "first_rowid INTEGER NOT NULL, last_rowid INTEGER NOT NULL, lines INTEGER NOT NULL, "
+    "PRIMARY KEY (source_id, file))",
+    "CREATE INDEX chapters_file ON chapters(file)",
+)
+
+
+def has_chapters(conn) -> bool:
+    try:
+        return conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'chapters'").fetchone() is not None
+    except sqlite3.Error:
+        return False
+
+
+def count_rows(conn, table) -> int:
+    if table == "epubs" and has_chapters(conn):
+        return conn.execute("SELECT COALESCE(SUM(lines), 0) FROM chapters").fetchone()[0]
+    try:
+        return conn.execute(f"SELECT COUNT(*) FROM {table}_docsize").fetchone()[0]
+    except sqlite3.Error:
+        return conn.execute(f"SELECT COUNT(rowid) FROM {table}").fetchone()[0]
+
+
+def chapter_spans(rows):
+    spans = {}
+    for rowid, sid, f in rows:
+        s = spans.get((sid, f))
+        if s is None:
+            spans[(sid, f)] = [rowid, rowid, 1]
+        else:
+            s[0], s[1], s[2] = min(s[0], rowid), max(s[1], rowid), s[2] + 1
+    return [(sid, f, a, b, n) for (sid, f), (a, b, n) in spans.items()]
+
+
+def ensure_chapters(conn) -> bool:
+    if has_chapters(conn):
+        return False
+    conn.commit()
+    conn.execute("BEGIN")
+    for sql in CHAPTERS_SCHEMA:
+        conn.execute(sql)
+    conn.executemany("INSERT INTO chapters VALUES (?, ?, ?, ?, ?)",
+                     chapter_spans(conn.execute("SELECT rowid, source_id, file FROM epubs")))
+    conn.commit()
+    return True
+
+
+SUDACHI_MAX_BYTES = 49149
+
+
+def sudachi_pieces(text: str):
+    if len(text.encode('utf-8')) <= SUDACHI_MAX_BYTES:
+        return [text]
+    pieces, buf, size = [], [], 0
+    for ch in text:
+        n = len(ch.encode('utf-8'))
+        if size + n > SUDACHI_MAX_BYTES:
+            pieces.append(''.join(buf))
+            buf, size = [], 0
+        buf.append(ch)
+        size += n
+    pieces.append(''.join(buf))
+    return pieces
+
+
+LINE_LENGTHS_VERSION = "1"
+LINE_LENGTHS_SCHEMA = "CREATE TABLE line_lengths (rowid INTEGER PRIMARY KEY, chars INTEGER NOT NULL)"
+DISPLAY_PUNCT_RE = re.compile(r'[ 　。…―～！？”“!?]')
+DISPLAY_NONWORD_RE = re.compile(r'[^\w、\.,]')
+
+
+def stored_display_length(line, media):
+    if not line:
+        return 0
+    if media == "epub":
+        if BOOK_DISPLAY_RUBY_RE.search(line):
+            return None
+        processed = line
+    else:
+        processed = RUBY_RE.sub(r'\1\2', line)
+    return len(DISPLAY_NONWORD_RE.sub('', DISPLAY_PUNCT_RE.sub('', processed)))
+
+
+def has_line_lengths(conn) -> bool:
+    try:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'line_lengths'").fetchone() is None:
+            return False
+        row = conn.execute("SELECT v FROM meta WHERE k = 'line_lengths_version'").fetchone()
+        return row is not None and row[0] == LINE_LENGTHS_VERSION
+    except sqlite3.Error:
+        return False
+
+
+def write_line_lengths(conn, rows, media):
+    keep, clear = [], []
+    for rowid, line in rows:
+        n = stored_display_length(line, media)
+        if n is None:
+            clear.append((rowid,))
+        else:
+            keep.append((rowid, n))
+    conn.executemany("INSERT OR REPLACE INTO line_lengths VALUES (?, ?)", keep)
+    if clear:
+        conn.executemany("DELETE FROM line_lengths WHERE rowid = ?", clear)
+
+
+def _lengths_chunk(job):
+    db_path, table, media, lo, hi, out_path = job
+    src = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    out = sqlite3.connect(out_path)
+    out.execute("CREATE TABLE IF NOT EXISTS l (rowid INTEGER PRIMARY KEY, chars INTEGER NOT NULL)")
+    rows = []
+    for rowid, line in src.execute(f"SELECT rowid, line FROM {table} WHERE rowid BETWEEN ? AND ?", (lo, hi)):
+        n = stored_display_length(line, media)
+        if n is not None:
+            rows.append((rowid, n))
+    out.executemany("INSERT INTO l VALUES (?, ?)", rows)
+    out.commit()
+    out.close()
+    src.close()
+    return out_path
+
+
+LENGTHS_CHUNK_ROWS = 250_000
+
+
+def ensure_line_lengths(conn, db_path, table, media, workers=1) -> bool:
+    conn.execute("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
+    conn.commit()
+    if has_line_lengths(conn):
+        return False
+    top = conn.execute(f"SELECT rowid FROM {table} ORDER BY rowid DESC LIMIT 1").fetchone()
+    work = os.path.join(os.path.dirname(os.path.abspath(db_path)), f".line_lengths-{table}")
+    shutil.rmtree(work, ignore_errors=True)
+    parts = []
+    if top:
+        os.makedirs(work, exist_ok=True)
+        jobs = [(db_path, table, media, lo, lo + LENGTHS_CHUNK_ROWS - 1, os.path.join(work, f"{i:06d}.db"))
+                for i, lo in enumerate(range(1, top[0] + 1, LENGTHS_CHUNK_ROWS))]
+        for i, part in enumerate(parallel_map(_lengths_chunk, jobs, workers, ordered=False,
+                                              stop=stop_requested), 1):
+            parts.append(part)
+            if stop_requested():
+                break
+            print(f"LENGTHS {i}/{len(jobs)}", flush=True)
+        if stop_requested():
+            shutil.rmtree(work, ignore_errors=True)
+            return False
+    conn.commit()
+    conn.execute("BEGIN")
+    conn.execute("DROP TABLE IF EXISTS line_lengths")
+    conn.execute(LINE_LENGTHS_SCHEMA)
+    for part in sorted(parts):
+        src = sqlite3.connect(part)
+        conn.executemany("INSERT INTO line_lengths VALUES (?, ?)", src.execute("SELECT rowid, chars FROM l ORDER BY rowid"))
+        src.close()
+    conn.execute("INSERT OR REPLACE INTO meta (k, v) VALUES ('line_lengths_version', ?)", (LINE_LENGTHS_VERSION,))
+    conn.commit()
+    shutil.rmtree(work, ignore_errors=True)
+    return True
+
+
+def drop_orphan_lengths(conn, table):
+    if has_line_lengths(conn):
+        conn.execute(f"DELETE FROM line_lengths WHERE rowid NOT IN (SELECT id FROM {table}_docsize)")
+
+
 def stop_requested():
     path = os.environ.get("AOBANA_STOP_FILE")
     return bool(path) and os.path.exists(path)
@@ -660,7 +832,7 @@ def compact_if_worth(conn, table, deleted, inserted):
     if not deleted:
         return
     conn.commit()
-    before = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] - inserted + deleted
+    before = count_rows(conn, table) - inserted + deleted
     if before > 0 and deleted / before >= COMPACT_SHARE:
         compact_index(conn, table)
 
@@ -685,7 +857,7 @@ def write_tokenizer_meta(conn, tokenized_rows: int) -> dict:
     return ident
 
 
-def parallel_map(fn, items, workers, chunksize=1):
+def parallel_map(fn, items, workers, chunksize=1, ordered=True, stop=None):
     pool = None
     if workers > 1:
         try:
@@ -697,4 +869,21 @@ def parallel_map(fn, items, workers, chunksize=1):
         yield from map(fn, items)
         return
     with pool:
-        yield from pool.imap(fn, items, chunksize)
+        if stop is None:
+            yield from (pool.imap if ordered else pool.imap_unordered)(fn, items, chunksize)
+            return
+        items = list(items)
+        chunks = [items[i:i + chunksize] for i in range(0, len(items), chunksize)]
+        it = (pool.imap if ordered else pool.imap_unordered)(functools.partial(_map_chunk, fn), chunks, 1)
+        while True:
+            try:
+                yield from it.next(timeout=0.5)
+            except multiprocessing.TimeoutError:
+                if stop():
+                    return
+            except StopIteration:
+                return
+
+
+def _map_chunk(fn, chunk):
+    return [fn(x) for x in chunk]

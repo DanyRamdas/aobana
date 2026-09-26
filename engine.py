@@ -1,3 +1,4 @@
+import ast
 import os
 import sqlite3
 import re
@@ -24,15 +25,19 @@ def db_fingerprint(*conns):
             path = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), "")
         except sqlite3.Error:
             path = ""
-        entry = [path]
-        for p in (path, path + "-wal"):
-            try:
-                st = os.stat(p)
-                entry.append((st.st_mtime_ns, st.st_size))
-            except (OSError, ValueError):
-                entry.append(None)
-        out.append(tuple(entry))
+        out.append(_file_fingerprint(path))
     return tuple(out)
+
+
+def _file_fingerprint(path):
+    entry = [path]
+    for p in (path, path + "-wal"):
+        try:
+            st = os.stat(p)
+            entry.append((st.st_mtime_ns, st.st_size))
+        except (OSError, ValueError):
+            entry.append(None)
+    return tuple(entry)
 
 
 def get_db_total(db_subs, db_epub, media='all'):
@@ -49,12 +54,12 @@ def get_db_total(db_subs, db_epub, media='all'):
     total = 0
     if media in ('all', 'subs') and db_subs is not None:
         try:
-            total += db_subs.execute("SELECT COUNT(rowid) FROM subtitles").fetchone()[0]
+            total += count_rows(db_subs, "subtitles")
         except Exception:
             pass
     if media in ('all', 'epub') and db_epub is not None:
         try:
-            total += db_epub.execute("SELECT COUNT(rowid) FROM epubs").fetchone()[0]
+            total += count_rows(db_epub, "epubs")
         except Exception:
             pass
 
@@ -74,7 +79,7 @@ from utils import (
     ALPHA_CHARS, ALPHA_PATTERN, RUBY_BASE_RE, RUBY_RE, ruby_re_for,
     SPACED_RUBY_PREV_RE, build_ruby_lexicon, ruby_reading, split_spaced_ruby,
     load_ruby_decisions, load_ruby_merges, load_ruby_trims, ruby_merge_key,
-    GlossRuby,
+    GlossRuby, count_rows, DISPLAY_PUNCT_RE, DISPLAY_NONWORD_RE, has_line_lengths, sudachi_pieces,
 )
 
 _RUBY_LEXICON = None
@@ -179,8 +184,8 @@ def iter_spaced_ruby_candidates():
 
 HTML_ESCAPE_MAP = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#x27;'}
 
-_DISPLAY_PUNCT_RE = re.compile(r'[ 　。…―～！？”“!?]')
-_DISPLAY_NONWORD_RE = re.compile(r'[^\w、\.,]')
+_DISPLAY_PUNCT_RE = DISPLAY_PUNCT_RE
+_DISPLAY_NONWORD_RE = DISPLAY_NONWORD_RE
 
 def calculate_display_length(line: str, media: str = 'subs') -> int:
     if not line: return 0
@@ -652,7 +657,7 @@ def highlight_and_furigana(text: str, content_bases: list, q: str, mark: bool = 
     tokenizer_obj, mode = get_tagger()
     words_data = []
     idx = 0
-    for token in tokenizer_obj.tokenize(clean_text, mode):
+    for token in (t for piece in sudachi_pieces(clean_text) for t in tokenizer_obj.tokenize(piece, mode)):
         surface = token.surface()
         start = clean_text.find(surface, idx)
         if start != -1:
@@ -1314,8 +1319,12 @@ def format_book_title(file_key, db_epub=None):
     book_title = parts[0]
     ch_part = parts[1] if len(parts) > 1 else ""
     
+    ch_num = re.match(r'^(\d+)\.', ch_part)
     ch_clean = re.sub(r'^\d+\.', '', ch_part).strip()
-    
+    raw_head = re.match(r'^([^｜]+)｜(.+)$', ch_clean)
+    if raw_head and utils.BOOK_RAW_FILE_CH_RE.search(raw_head.group(1)):
+        ch_clean = raw_head.group(2).strip()
+
     author = GLOBAL_BOOK_AUTHORS.get(book_title, "")
     if not author:
         m = re.match(r'^\[(.*?)\]\s*(.*)$', book_title)
@@ -1338,7 +1347,9 @@ def format_book_title(file_key, db_epub=None):
         for old, new in utils.EPUB_STR_REPLACEMENTS:
             author = author.replace(old, new)
 
-    if ch_clean in (book_title, '本文', '本編', '') or utils.BOOK_RAW_FILE_CH_RE.search(ch_clean):
+    if utils.BOOK_RAW_FILE_CH_RE.search(ch_clean):
+        ch_clean = str(int(ch_num.group(1))) if ch_num else ''
+    elif ch_clean in (book_title, '本文', '本編', ''):
         ch_clean = ''
         
     if author:
@@ -1376,19 +1387,185 @@ def _result_cache_get(key):
         entry = _RESULT_CACHE.get(key)
         if entry is not None:
             _RESULT_CACHE.move_to_end(key)
-        return entry
+            return entry
+    entry = _disk_cache_get(key)
+    if entry is not None:
+        _result_cache_put(key, entry)
+    return entry
 
 
-def _result_cache_put(key, valid_results, folder_counts):
-    if key is None:
+DISK_CACHE_ENABLED = None
+
+
+def disk_cache_enabled():
+    if DISK_CACHE_ENABLED is not None:
+        return DISK_CACHE_ENABLED
+    return paths.load_config().get("search_cache") is True
+
+
+DISK_CACHE_MIN_SECONDS = 1.0
+DISK_CACHE_MAX_BYTES = 1024 ** 3
+_DISK_LOCK = threading.Lock()
+_DISK_ARRAYS = (("media", "b"), ("fidx", "i"), ("rowid", "q"), ("score", "d"), ("char_count", "q"))
+
+
+def disk_cache_path():
+    return os.path.join(os.path.dirname(os.path.abspath(paths.subs_db())), "search_cache.db")
+
+
+def _disk_open():
+    conn = sqlite3.connect(disk_cache_path(), timeout=5)
+    try:
+        conn.execute("PRAGMA auto_vacuum = INCREMENTAL")
+        conn.execute("CREATE TABLE IF NOT EXISTS entries (key TEXT PRIMARY KEY, fp TEXT, rows INTEGER, "
+                     "bytes INTEGER, used REAL, media BLOB, fidx BLOB, rowid BLOB, score BLOB, "
+                     "char_count BLOB, folders TEXT, folder_counts TEXT)")
+    except BaseException:
+        conn.close()
+        raise
+    return conn
+
+
+def _disk_drop_file():
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        try:
+            os.remove(disk_cache_path() + suffix)
+        except OSError:
+            pass
+
+
+def _disk_cache_get(key):
+    if key is None or not disk_cache_enabled():
+        return None
+    import json
+    import time
+    with _DISK_LOCK:
+        if not os.path.exists(disk_cache_path()):
+            return None
+        try:
+            conn = _disk_open()
+            try:
+                row = conn.execute("SELECT media, fidx, rowid, score, char_count, folders, folder_counts "
+                                   "FROM entries WHERE key = ?", (repr(key),)).fetchone()
+                if row is None:
+                    return None
+                entry = {}
+                for (name, code), blob in zip(_DISK_ARRAYS, row):
+                    a = array(code)
+                    a.frombytes(blob)
+                    entry[name] = a
+                entry["folders"] = json.loads(row[5])
+                entry["folder_counts"] = json.loads(row[6])
+                if len({len(entry[name]) for name, _ in _DISK_ARRAYS}) != 1:
+                    return None
+                conn.execute("UPDATE entries SET used = ? WHERE key = ?", (time.time(), repr(key)))
+                conn.commit()
+                return entry
+            finally:
+                conn.close()
+        except sqlite3.DatabaseError:
+            _disk_drop_file()
+        except (sqlite3.Error, OSError, ValueError, TypeError):
+            pass
+    return None
+
+
+def _disk_cache_put(key, entry):
+    import json
+    import time
+    blobs = [entry[name].tobytes() for name, _ in _DISK_ARRAYS]
+    folders, counts = json.dumps(entry["folders"]), json.dumps(entry["folder_counts"])
+    size = sum(len(b) for b in blobs) + len(folders.encode()) + len(counts.encode())
+    if size > DISK_CACHE_MAX_BYTES:
         return
-    entry = {
-        "media": array("b", (_MEDIA_CODES[r["media_type"]] for r in valid_results)),
-        "rowid": array("q", (r["rowid"] for r in valid_results)),
-        "score": array("d", (r["score"] for r in valid_results)),
-        "char_count": array("q", (r["char_count"] for r in valid_results)),
+    with _DISK_LOCK:
+        try:
+            conn = _disk_open()
+            try:
+                dead = []
+                for old_key, old_fp in conn.execute("SELECT key, fp FROM entries").fetchall():
+                    try:
+                        files = ast.literal_eval(old_fp)
+                        if any(f is not None and _file_fingerprint(f[0]) != f for f in files):
+                            dead.append((old_key,))
+                    except (ValueError, SyntaxError, TypeError, IndexError):
+                        dead.append((old_key,))
+                conn.executemany("DELETE FROM entries WHERE key = ?", dead)
+                conn.execute("INSERT OR REPLACE INTO entries VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                             (repr(key), repr(key[-1]), len(entry["rowid"]), size, time.time(),
+                              *blobs, folders, counts))
+                total = conn.execute("SELECT COALESCE(SUM(bytes), 0) FROM entries").fetchone()[0]
+                for old_key, old_bytes in conn.execute(
+                        "SELECT key, bytes FROM entries ORDER BY used").fetchall():
+                    if total <= DISK_CACHE_MAX_BYTES:
+                        break
+                    conn.execute("DELETE FROM entries WHERE key = ?", (old_key,))
+                    total -= old_bytes
+                conn.commit()
+                conn.execute("PRAGMA incremental_vacuum").fetchall()
+            finally:
+                conn.close()
+        except sqlite3.DatabaseError:
+            _disk_drop_file()
+        except (sqlite3.Error, OSError):
+            pass
+
+
+def _disk_cache_put_later(key, entry, seconds):
+    if (key is None or seconds < DISK_CACHE_MIN_SECONDS or key[1] == "random"
+            or not disk_cache_enabled()):
+        return
+    threading.Thread(target=_disk_cache_put, args=(key, entry), daemon=True).start()
+
+
+def disk_cache_stats():
+    with _DISK_LOCK:
+        path = disk_cache_path()
+        if not os.path.exists(path):
+            return {"entries": 0, "bytes": 0}
+        try:
+            conn = _disk_open()
+            try:
+                n = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
+            finally:
+                conn.close()
+            return {"entries": n, "bytes": os.path.getsize(path)}
+        except (sqlite3.Error, OSError):
+            return {"entries": 0, "bytes": 0}
+
+
+def clear_disk_cache():
+    with _DISK_LOCK:
+        _disk_drop_file()
+        gone = not os.path.exists(disk_cache_path())
+    with _RESULT_CACHE_LOCK:
+        _RESULT_CACHE.clear()
+    return gone
+
+
+_LEAN_LINE, _LEAN_ROWID, _LEAN_MEDIA, _LEAN_FOLDER, _LEAN_SCORE, _LEAN_CHARS = range(6)
+
+
+def _result_entry(valid_results, folder_counts):
+    names = {}
+    for r in valid_results:
+        names.setdefault(r[_LEAN_FOLDER], len(names))
+    return {
+        "media": array("b", (_MEDIA_CODES[r[_LEAN_MEDIA]] for r in valid_results)),
+        "fidx": array("i", (names[r[_LEAN_FOLDER]] for r in valid_results)),
+        "folders": list(names),
+        "rowid": array("q", (r[_LEAN_ROWID] for r in valid_results)),
+        "score": array("d", (r[_LEAN_SCORE] for r in valid_results)),
+        "char_count": array("q", (r[_LEAN_CHARS] for r in valid_results)),
         "folder_counts": dict(folder_counts),
     }
+
+
+def _result_cache_put(key, entry, seconds=None):
+    if key is None:
+        return
+    if seconds is not None:
+        _disk_cache_put_later(key, entry, seconds)
     with _RESULT_CACHE_LOCK:
         _RESULT_CACHE[key] = entry
         _RESULT_CACHE.move_to_end(key)
@@ -1398,8 +1575,7 @@ def _result_cache_put(key, valid_results, folder_counts):
             total -= len(old["rowid"])
 
 
-def _result_cache_page(entry, offset, limit, targets):
-    idx = range(offset, min(offset + limit, len(entry["rowid"])))
+def _result_cache_page(entry, idx, targets):
     tables = {m_type: (table, conn) for table, conn, m_type in targets}
     wanted = {}
     for i in idx:
@@ -1428,6 +1604,71 @@ def _result_cache_page(entry, offset, limit, targets):
         del row_dict["clean_text"]
         chunk.append(row_dict)
     return chunk
+
+
+_LENGTHS_READY = {}
+
+
+def _scan_columns(conn, table):
+    key = db_fingerprint(conn)
+    if key not in _LENGTHS_READY:
+        if len(_LENGTHS_READY) > 16:
+            _LENGTHS_READY.clear()
+        _LENGTHS_READY[key] = has_line_lengths(conn)
+    if _LENGTHS_READY[key]:
+        return (f"{table}.rowid, line, file, clean_text, readings, base_forms, line_lengths.chars "
+                f"FROM {table} LEFT JOIN line_lengths ON line_lengths.rowid = {table}.rowid")
+    return f"{table}.rowid, line, file, clean_text, readings, base_forms, NULL FROM {table}"
+
+
+def _scan_rows(conn, cols, where_clause, params, sort, m_type, pass1, abort_flag, entry):
+    rowid = cols.split(".", 1)[0] + ".rowid"
+    if sort == "chrono":
+        cur = conn.execute(f"SELECT {cols} {where_clause} ORDER BY file ASC, {rowid} ASC", params)
+        lean, seen = [], 0
+        for r in cur:
+            seen += 1
+            if abort_flag and abort_flag[0] and seen % 100 == 0:
+                return None, seen
+            got = pass1(r, m_type)
+            if got is not None:
+                lean.append(got)
+        return lean, seen
+    cur = conn.execute(f"SELECT {cols} {where_clause}", params)
+    first = set()
+    lean, seen, prev = [], 0, -1
+    for r in cur:
+        seen += 1
+        if abort_flag and abort_flag[0] and seen % 100 == 0:
+            return None, seen
+        if entry is not None and seen % 2000 == 0:
+            entry["pass_done"] = seen
+        if r[0] < prev:
+            cur.close()
+            return _scan_grouped(conn, cols, rowid, where_clause, params, m_type, pass1, abort_flag)
+        prev = r[0]
+        line = r[1]
+        if line in first:
+            continue
+        first.add(line)
+        got = pass1(r, m_type)
+        if got is not None:
+            lean.append(got)
+    lean.sort(key=lambda x: x[_LEAN_LINE])
+    return lean, seen
+
+
+def _scan_grouped(conn, cols, rowid, where_clause, params, m_type, pass1, abort_flag):
+    cur = conn.execute(f"SELECT MIN({rowid}) AS rowid, {cols.split(', ', 1)[1]} {where_clause} GROUP BY line", params)
+    lean, seen = [], 0
+    for r in cur:
+        seen += 1
+        if abort_flag and abort_flag[0] and seen % 100 == 0:
+            return None, seen
+        got = pass1(r, m_type)
+        if got is not None:
+            lean.append(got)
+    return lean, seen
 
 
 _RESULT_FLIGHT = {}
@@ -1460,7 +1701,7 @@ def _result_flight_release(held):
             ev.set()
 
 
-SEARCH_COST = {"subtitles": 9e-6, "epubs": 13e-6, "pass": 15e-6, "like": 0.6e-6, "fixed": 0.5}
+SEARCH_COST = {"subtitles": 20e-6, "epubs": 16e-6, "pass": 0.0, "like": 0.6e-6, "fixed": 0.5}
 _SEARCH_PROGRESS = {}
 _SEARCH_PROGRESS_LOCK = threading.Lock()
 
@@ -1484,7 +1725,7 @@ def _learn_cost(name, seconds, rows):
 def search_progress(db_subs, db_epub, q, sort="recommended", seed=None, media="all", exact=False,
                     folder=None, file=None):
     import time
-    key = _result_cache_key(q, sort, seed, media, exact, folder, file,
+    key = _result_cache_key(q, sort, seed, media, exact, None if q else folder, file,
                             _search_targets(db_subs, db_epub, media))
     with _SEARCH_PROGRESS_LOCK:
         p = _SEARCH_PROGRESS.get(key)
@@ -1562,6 +1803,13 @@ def _search_results(db, q, folders, sort, folder, exact, abort_flag, limit, offs
 
     targets = _search_targets(db_subs, db_epub, media)
 
+    if isinstance(folder, (list, tuple)):
+        folder_set = {f for f in folder if f} or None
+    else:
+        folder_set = {folder} if folder else None
+    if not q:
+        folder = next(iter(folder_set)) if folder_set and len(folder_set) == 1 else None
+
     def get_sort_key(f):
         import utils
         mixed = utils.katakana_to_hiragana(f).replace('ゔ', 'う').lower()
@@ -1609,8 +1857,32 @@ def _search_results(db, q, folders, sort, folder, exact, abort_flag, limit, offs
             where_clause, query_params = folder_where, folder_params
 
         fingerprint = db_fingerprint(target_db)
+        import utils
+        if target_media == 'epub' and utils.has_chapters(target_db):
+            prefixes = [folder + "\\", folder + "/"]
+            spans = target_db.execute(
+                "SELECT file, first_rowid, last_rowid, lines FROM chapters WHERE "
+                + " OR ".join("(file >= ? AND file < ?)" for _ in prefixes),
+                [x for pre in prefixes for x in (pre, pre + "\U0010ffff")]).fetchall()
+            mine = [s for s in spans if not file or s[0] == file]
+            if not mine:
+                return [], {**global_counts, folder: 0}, 0, all_folders, False
+            lo, hi = min(s[1] for s in mine), max(s[2] for s in mine)
+            folder_where = "WHERE rowid BETWEEN ? AND ? AND (file LIKE ? OR file LIKE ?)"
+            folder_params = [min(s[1] for s in spans), max(s[2] for s in spans)] + folder_params
+            if file:
+                where_clause, query_params = "WHERE rowid BETWEEN ? AND ? AND file = ?", [lo, hi, file]
+            else:
+                where_clause, query_params = folder_where, folder_params
+            chapter_counts = {folder: sum(s[3] for s in spans)}
+            if file:
+                chapter_counts[(folder, file)] = sum(s[3] for s in mine)
+        else:
+            chapter_counts = {}
 
         def cached_count(key, where, params):
+            if key in chapter_counts:
+                return chapter_counts[key]
             key = (key, fingerprint)
             if key not in GLOBAL_FOLDER_COUNTS:
                 GLOBAL_FOLDER_COUNTS[key] = target_db.execute(f"SELECT COUNT(rowid) FROM {target_table} {where}", params).fetchone()[0]
@@ -1668,16 +1940,47 @@ def _search_results(db, q, folders, sort, folder, exact, abort_flag, limit, offs
                     'readings': neg_rd
                 })
         
-        all_candidate_rows = []
         global_counts = {}
+        valid_results = []
 
-        cache_key = _result_cache_key(q, sort, seed, media, exact, folder, file, targets)
+        def pass1(r, m_type):
+            line, clean_text, row_readings, row_bases = r[1], r[3], r[4], r[5]
+            for n in neg_info:
+                if n['term'] in clean_text or n['term'] in line:
+                    return None
+                for b in n['bases']:
+                    if b in (row_bases or ""):
+                        return None
+            if bound and bound_auxiliary_in_row(bound, row_bases, row_readings) is False:
+                return None
+            is_exact = clean_q in clean_text
+            if not is_exact and readings:
+                if row_readings and q_reading in row_readings.replace(" ", ""):
+                    is_exact = True
+            if len(clean_q) > 0 and not is_exact:
+                for cb in content_bases:
+                    if cb in clean_text or (row_readings and cb in row_readings) or (row_bases and cb in row_bases):
+                        break
+                else:
+                    return None
+            char_count = r[6] if r[6] is not None else calculate_display_length(line, m_type or "subs")
+            return (line, r[0], m_type, _result_folder(m_type, r[2]),
+                    sentence_score(line, clean_q, is_exact, char_count), char_count)
+        q_reading = "".join(readings)
+
+        cache_key = _result_cache_key(q, sort, seed, media, exact, None, file, targets)
         cached = _result_cache_get(cache_key)
         if cached is None and cache_key is not None:
             cached = _result_flight_join(cache_key, abort_flag, held)
             if cached is _ABORTED:
                 return [], {}, 0, [], False
-        cached_page = _result_cache_page(cached, offset, limit, targets) if cached is not None else None
+        if cached is not None:
+            if folder_set:
+                names = cached["folders"]
+                cached_sel = [i for i, fi in enumerate(cached["fidx"]) if names[fi] in folder_set]
+            else:
+                cached_sel = range(len(cached["rowid"]))
+            cached_page = _result_cache_page(cached, cached_sel[offset:offset + limit], targets)
         if cached_page is None:
             cached = None
 
@@ -1752,6 +2055,7 @@ def _search_results(db, q, folders, sort, folder, exact, abort_flag, limit, offs
         else:
             entry = None
 
+        compute_start = time.monotonic()
         for table_name, db_conn, m_type in (targets if cached is None else ()):
             if db_conn is None: continue
             if abort_flag and abort_flag[0]:
@@ -1759,20 +2063,12 @@ def _search_results(db, q, folders, sort, folder, exact, abort_flag, limit, offs
             wheres, where_params, _ = build_where(table_name)
             if entry is not None:
                 entry["table"], entry["table_start"] = table_name, time.monotonic()
-                rows_before = len(all_candidate_rows)
 
             where_clause = f"WHERE ({' AND '.join(wheres)})"
-            if sort == "chrono":
-                query = f"SELECT rowid, line, file, clean_text, readings, base_forms FROM {table_name} {where_clause} ORDER BY file ASC, rowid ASC"
-            else:
-                query = f"SELECT MIN(rowid) as rowid, line, file, clean_text, readings, base_forms FROM {table_name} {where_clause} GROUP BY line"
-
+            cols = _scan_columns(db_conn, table_name)
             try:
-                cur = db_conn.execute(query, where_params)
-                for r in cur.fetchall():
-                    rd = dict(r)
-                    rd["media_type"] = m_type
-                    all_candidate_rows.append(rd)
+                lean, seen = _scan_rows(db_conn, cols, where_clause, where_params, sort, m_type,
+                                        pass1, abort_flag, entry)
             except sqlite3.OperationalError as e:
                 if "interrupted" in str(e):
                     raise
@@ -1784,119 +2080,59 @@ def _search_results(db, q, folders, sort, folder, exact, abort_flag, limit, offs
                 if file:
                     fallback_wheres.append("file = ?")
                     fallback_params.append(file)
-                elif folder:
-                    fallback_wheres.append("(file LIKE ? OR file LIKE ?)")
-                    fallback_params.extend([folder + "\\%", folder + "/%"])
                 fb_clause = f"WHERE ({' AND '.join(fallback_wheres)})"
-                if sort == "chrono":
-                    fb_query = f"SELECT rowid, line, file, clean_text, readings, base_forms FROM {table_name} {fb_clause} ORDER BY file ASC, rowid ASC"
-                else:
-                    fb_query = f"SELECT MIN(rowid) as rowid, line, file, clean_text, readings, base_forms FROM {table_name} {fb_clause} GROUP BY line"
                 try:
-                    cur = db_conn.execute(fb_query, fallback_params)
-                    for r in cur.fetchall():
-                        rd = dict(r)
-                        rd["media_type"] = m_type
-                        all_candidate_rows.append(rd)
+                    lean, seen = _scan_rows(db_conn, cols, fb_clause, fallback_params, sort, m_type,
+                                            pass1, abort_flag, entry)
+                except sqlite3.OperationalError as e2:
+                    if "interrupted" in str(e2):
+                        raise
+                    lean, seen = [], 0
                 except Exception:
-                    pass
+                    lean, seen = [], 0
+            if lean is None:
+                return [], {}, 0, [], False
+            valid_results.extend(lean)
             if entry is not None:
                 spent = time.monotonic() - entry["table_start"]
                 entry["sql_seconds"][table_name] = spent
                 if "MATCH" in wheres[0]:
-                    _learn_cost(table_name, spent, len(all_candidate_rows) - rows_before)
+                    _learn_cost(table_name, spent, seen)
 
     results = []
     folder_counts = {}
     global_total = 0
-    valid_results = []
-    
-    if entry is not None:
-        entry["phase"], entry["pass_total"], entry["pass_start"] = "pass", len(all_candidate_rows), time.monotonic()
-    for i, row_dict in enumerate(all_candidate_rows):
-        if abort_flag and abort_flag[0] and i % 100 == 0:
-            return [], {}, 0, [], False
-        if entry is not None and i % 2000 == 0:
-            entry["pass_done"] = i
-            
-        line = row_dict["line"]
-        clean_text = row_dict["clean_text"]
-        folder_name = _result_folder(row_dict.get("media_type"), row_dict["file"])
-
-        is_neg_hit = False
-        if neg_info:
-            for n in neg_info:
-                if n['term'] in clean_text or n['term'] in line:
-                    is_neg_hit = True
-                    break
-                row_bases = row_dict.get("base_forms") or ""
-                for b in n['bases']:
-                    if b in row_bases:
-                        is_neg_hit = True
-                        break
-                if is_neg_hit:
-                    break
-        if is_neg_hit:
-            continue
-        
-        if bound and bound_auxiliary_in_row(bound, row_dict.get("base_forms"), row_dict.get("readings")) is False:
-            continue
-
-        is_exact = clean_q in clean_text
-        if not is_exact and readings:
-            q_reading = "".join(readings)
-            r_reading = row_dict.get("readings")
-            if r_reading and q_reading in r_reading.replace(" ", ""):
-                is_exact = True
-                
-        if len(clean_q) > 0 and not is_exact:
-            valid = False
-            for cb in content_bases:
-                if cb in clean_text or (row_dict.get("readings") and cb in row_dict["readings"]) or (row_dict.get("base_forms") and cb in row_dict["base_forms"]):
-                    valid = True
-                    break
-            if not valid:
-                continue
-                    
-        char_count = calculate_display_length(line, row_dict.get("media_type") or "subs")
-        score = sentence_score(line, clean_q, is_exact, char_count)
-
-        row_dict["folder"] = folder_name
-        row_dict["score"] = score
-        row_dict["char_count"] = char_count
-        
-        del row_dict["clean_text"]
-        
-        folder_counts[folder_name] = folder_counts.get(folder_name, 0) + 1
-        global_total += 1
-        
-        if not folder or folder_name == folder:
-            valid_results.append(row_dict)
 
     if entry is not None:
         entry["phase"] = "render"
-        _learn_cost("pass", time.monotonic() - entry["pass_start"], len(all_candidate_rows))
+    for r in valid_results:
+        folder_counts[r[_LEAN_FOLDER]] = folder_counts.get(r[_LEAN_FOLDER], 0) + 1
     if sort == "desc":
-        valid_results.sort(key=lambda x: x["char_count"], reverse=True)
+        valid_results.sort(key=lambda x: x[_LEAN_CHARS], reverse=True)
     elif sort == "asc":
-        valid_results.sort(key=lambda x: x["char_count"], reverse=False)
+        valid_results.sort(key=lambda x: x[_LEAN_CHARS], reverse=False)
     elif sort == "random":
         (random.Random(seed) if seed is not None else random).shuffle(valid_results)
     elif sort == "chrono":
         pass
     else:
-        valid_results.sort(key=lambda x: x["score"], reverse=True)
+        valid_results.sort(key=lambda x: x[_LEAN_SCORE], reverse=True)
 
-    if cached is not None:
-        paginated_chunk = cached_page
-        folder_counts = dict(cached["folder_counts"])
-        n_valid = len(cached["rowid"])
-    else:
-        _result_cache_put(cache_key, valid_results, folder_counts)
+    if cached is None:
+        cached = _result_entry(valid_results, folder_counts)
+        valid_results = None
+        _result_cache_put(cache_key, cached, time.monotonic() - compute_start)
         _result_flight_release(held)
-        paginated_chunk = valid_results[offset : offset + limit]
-        n_valid = len(valid_results)
-    
+        if folder_set:
+            names = cached["folders"]
+            cached_sel = [i for i, fi in enumerate(cached["fidx"]) if names[fi] in folder_set]
+        else:
+            cached_sel = range(len(cached["rowid"]))
+        cached_page = _result_cache_page(cached, cached_sel[offset:offset + limit], targets) or []
+    paginated_chunk = cached_page
+    folder_counts = dict(cached["folder_counts"])
+    n_valid = len(cached_sel)
+
     for row_dict in paginated_chunk:
         if abort_flag and abort_flag[0]:
             return [], {}, 0, [], False
@@ -2063,8 +2299,11 @@ def _count_media_library(db_subs, db_epub):
             pass
     if db_epub is not None:
         try:
-            stats = {sid: (n, ch) for sid, n, ch in db_epub.execute(
-                "SELECT source_id, COUNT(*), COUNT(DISTINCT file) FROM epubs GROUP BY source_id")}
+            import utils
+            stats_sql = ("SELECT source_id, SUM(lines), COUNT(*) FROM chapters GROUP BY source_id"
+                         if utils.has_chapters(db_epub) else
+                         "SELECT source_id, COUNT(*), COUNT(DISTINCT file) FROM epubs GROUP BY source_id")
+            stats = {sid: (n, ch) for sid, n, ch in db_epub.execute(stats_sql)}
             for sid, relpath, title, author in db_epub.execute(
                     "SELECT id, relpath, title, author FROM sources"):
                 name = title or (relpath[:-5] if relpath.lower().endswith(".epub") else relpath)

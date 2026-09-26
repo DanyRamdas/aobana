@@ -6,6 +6,9 @@ content/
 logs/
 config.json
 aobana.installed
+# The data folder of a copy run from here (data/ruby is the program's)
+data/*
+!data/ruby/
 
 # Python
 __pycache__/

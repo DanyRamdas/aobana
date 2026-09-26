@@ -19,7 +19,21 @@ def _user_data_dir():
 
 
 INSTALLED = os.path.exists(MARKER_PATH)
-STORE_DIR = _user_data_dir() if INSTALLED else (os.environ.get("AOBANA_DATA_DIR") or BASE_DIR)
+
+DATA_FOLDER = "data"
+_MOVED_TO_DATA = ("config.json", "logs", "update", "update.json", "profile-handoff.json")
+
+
+def _source_store():
+    new = os.path.join(BASE_DIR, DATA_FOLDER)
+    if os.path.exists(os.path.join(new, "config.json")):
+        return new
+    if any(os.path.exists(os.path.join(BASE_DIR, n)) for n in _MOVED_TO_DATA + ("subs.db", "epub.db", "db")):
+        return BASE_DIR
+    return new
+
+
+STORE_DIR = _user_data_dir() if INSTALLED else (os.environ.get("AOBANA_DATA_DIR") or _source_store())
 CONFIG_PATH = os.path.join(STORE_DIR, "config.json")
 
 
@@ -168,7 +182,89 @@ def index_workers():
 
 
 def db_dir():
-    return load_config().get("db_dir") or STORE_DIR
+    return load_config().get("db_dir") or default_db_dir()
+
+
+DB_FOLDER = "db"
+_DB_NAMES = ("subs.db", "epub.db")
+_MOVED_WITH_DBS = ([n + s for n in _DB_NAMES + ("search_cache.db", "analysis.db")
+                    for s in ("", "-wal", "-shm", "-journal")]
+                   + ["filtered.tsv", "analysis.json", "media_cache.json", "library_figures.json"])
+
+
+def default_db_dir():
+    new = os.path.join(STORE_DIR, DB_FOLDER)
+    if not any(os.path.exists(os.path.join(new, n)) for n in _DB_NAMES) \
+            and any(os.path.exists(os.path.join(STORE_DIR, n)) for n in _DB_NAMES):
+        return STORE_DIR
+    return new
+
+
+def _db_env_or_chosen():
+    return bool(load_config().get("db_dir") or os.environ.get("SUBS_DB_PATH") or os.environ.get("EPUB_DB_PATH"))
+
+
+def _rename_all(pairs):
+    done = []
+    try:
+        for s, d in pairs:
+            os.replace(s, d)
+            done.append((s, d))
+    except OSError:
+        for s, d in reversed(done):
+            try:
+                os.replace(d, s)
+            except OSError:
+                pass
+        return False
+    return True
+
+
+def move_into_data_folder():
+    global STORE_DIR, CONFIG_PATH
+    moved = []
+    if not INSTALLED and not os.environ.get("AOBANA_DATA_DIR") and STORE_DIR == BASE_DIR:
+        new = os.path.join(BASE_DIR, DATA_FOLDER)
+        names = list(_MOVED_TO_DATA)
+        if not _db_env_or_chosen():
+            names += list(_MOVED_WITH_DBS) + [DB_FOLDER]
+        names = [n for n in names if os.path.exists(os.path.join(BASE_DIR, n))
+                 and not os.path.exists(os.path.join(new, n))]
+        try:
+            os.makedirs(new, exist_ok=True)
+        except OSError:
+            return []
+        if not _rename_all([(os.path.join(BASE_DIR, n), os.path.join(new, n)) for n in names]):
+            return []
+        moved = names
+        STORE_DIR, CONFIG_PATH = new, os.path.join(new, "config.json")
+    return moved + move_into_db_folder()
+
+
+def move_into_db_folder():
+    if _db_env_or_chosen():
+        return []
+    new = os.path.join(STORE_DIR, DB_FOLDER)
+    names = [n for n in _MOVED_WITH_DBS if os.path.isfile(os.path.join(STORE_DIR, n))]
+    if not any(n in _DB_NAMES for n in names) \
+            or any(os.path.exists(os.path.join(new, n)) for n in _DB_NAMES):
+        return []
+    done = []
+    try:
+        os.makedirs(new, exist_ok=True)
+        for n in names:
+            if os.path.exists(os.path.join(new, n)):
+                continue
+            os.replace(os.path.join(STORE_DIR, n), os.path.join(new, n))
+            done.append(n)
+    except OSError:
+        for n in reversed(done):
+            try:
+                os.replace(os.path.join(new, n), os.path.join(STORE_DIR, n))
+            except OSError:
+                pass
+        return []
+    return done
 
 
 def subs_db():

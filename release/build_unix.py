@@ -86,7 +86,7 @@ def constraints():
 def image(platform, dest):
     step(f"image -> {dest}")
     check_whitelist()
-    print(f"  {copy_checked(program_pairs(dest))} program files, byte-checked")
+    print(f"  {copy_checked(program_pairs(dest, image=True))} program files, byte-checked")
     check_published(dest)
     name, digest = PYTHONS[platform]
     with tarfile.open(fetch(PBS + name.replace("+", "%2B"), digest, name)) as tf:

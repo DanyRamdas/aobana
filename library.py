@@ -8,7 +8,7 @@ import threading
 import time
 
 import paths
-from utils import FILTER_COLUMNS, filtered_rows, outdated_sources
+from utils import FILTER_COLUMNS, count_rows, filtered_rows, outdated_sources
 
 _LOCK = threading.Lock()
 _STATE = {"running": False}
@@ -49,16 +49,20 @@ _SUMMARY_RE = {
 }
 
 
-def _count_files(root, ext, skip_dot):
+def _count_files(root, ext, skip_dot, progress=None):
     found = other = 0
     if not root or not os.path.isdir(root):
         return None
+    last = time.monotonic()
     for dirpath, _, files in os.walk(root):
         for f in files:
             if f.lower().endswith(ext) and not (skip_dot and f.startswith('.')):
                 found += 1
             elif not f.startswith('.'):
                 other += 1
+        if progress and time.monotonic() - last > 0.25:
+            last = time.monotonic()
+            progress(found, other)
     return {"files": found, "loose": 0, "other": other}
 
 
@@ -67,31 +71,153 @@ def _indexed(conn, table):
         return {"files": 0, "rows": 0}
     try:
         return {"files": conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0],
-                "rows": conn.execute(f"SELECT COUNT(rowid) FROM {table}").fetchone()[0]}
+                "rows": count_rows(conn, table)}
     except Exception:
         return {"files": 0, "rows": 0}
 
 
+_FSTATE = {"running": False}
+_FIG_STALE = {"stale": True}
+_FIG_SAVE_EVERY = 2.0
+LONG_TASK_SECONDS = 60
+
+
+def _figures_path():
+    return _beside_db("library_figures.json")
+
+
+def _figures_key():
+    return [paths.subs_dir(), paths.books_dir()]
+
+
+def _load_figures():
+    try:
+        with open(_figures_path(), encoding="utf-8") as fh:
+            saved = json.load(fh)
+        return saved if isinstance(saved, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _save_figures(doc):
+    try:
+        tmp = _figures_path() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        os.replace(tmp, _figures_path())
+    except OSError:
+        pass
+
+
+def _walk_figures(key, shown):
+    started = time.time()
+    doc = {"key": key, "complete": False, "subs_disk": None, "books_disk": None}
+    last_save = 0.0
+
+    def publish(save=False):
+        nonlocal last_save
+        with _LOCK:
+            _FSTATE.update(subs_disk=doc["subs_disk"], books_disk=doc["books_disk"])
+        if save or time.monotonic() - last_save > _FIG_SAVE_EVERY:
+            last_save = time.monotonic()
+            if not shown:
+                _save_figures(doc)
+
+    try:
+        for name, root, ext, skip_dot in (("subs_disk", key[0], (".srt", ".ass", ".ssa"), False),
+                                          ("books_disk", key[1], ".epub", True)):
+            def progress(found, other, name=name):
+                doc[name] = {"files": found, "loose": 0, "other": other, "counting": True}
+                publish()
+            if root and os.path.isdir(root):
+                doc[name] = {"files": 0, "loose": 0, "other": 0, "counting": True}
+            doc[name] = _count_files(root, ext, skip_dot, progress)
+            publish()
+        doc.update(complete=True, counted_at=time.time())
+        _save_figures(doc)
+    finally:
+        seconds = time.time() - started
+        with _LOCK:
+            _FSTATE.update(running=False, finished_at=time.time(), saved=doc if doc["complete"] else None)
+        if not shown and doc["complete"] and seconds > LONG_TASK_SECONDS:
+            _add_notice("figures", seconds)
+        if _FSTATE.get("again"):
+            ensure_figures()
+
+
+def ensure_figures():
+    key = _figures_key()
+    with _LOCK:
+        if _FSTATE.get("running"):
+            _FSTATE["again"] = _FSTATE.get("key") != key
+            return
+        saved = _FSTATE.get("saved") or _load_figures()
+        good = bool(saved and saved.get("key") == key and saved.get("complete"))
+        if good and not _FIG_STALE["stale"]:
+            _FSTATE["saved"] = saved
+            return
+        _FIG_STALE["stale"] = False
+        _FSTATE.update(running=True, key=key, again=False, started_at=time.time(), saved=saved if good else None,
+                       subs_disk=None, books_disk=None)
+    threading.Thread(target=_walk_figures, args=(key, good), daemon=True).start()
+
+
+def figures():
+    ensure_figures()
+    with _LOCK:
+        running = bool(_FSTATE.get("running"))
+        saved = _FSTATE.get("saved")
+        if saved and saved.get("key") == _figures_key():
+            out = {"subs_disk": saved.get("subs_disk"), "books_disk": saved.get("books_disk")}
+        else:
+            out = {"subs_disk": _FSTATE.get("subs_disk"), "books_disk": _FSTATE.get("books_disk")}
+    out = {k: (dict(v) if v else v) for k, v in out.items()}
+    out["counting"] = running
+    listed = filtered_rows(paths.filtered_list())
+    for key, media in (("subs_disk", "subs"), ("books_disk", "epub")):
+        if out[key]:
+            out[key]["filtered"] = sum(1 for r in listed if r["media"] == media)
+    return out
+
+
+_NOTICES = []
+_NOTICE_IDS = iter(range(1, 1 << 62))
+
+
+def _add_notice(kind, seconds, **extra):
+    with _LOCK:
+        _NOTICES.append({"id": next(_NOTICE_IDS), "kind": kind, "seconds": round(seconds),
+                         "finished_at": time.time(), **extra})
+        del _NOTICES[:-10]
+
+
+def activity():
+    with _LOCK:
+        return {"index": bool(_STATE.get("running")), "check": bool(_ASTATE.get("running")),
+                "figures": bool(_FSTATE.get("running")), "notices": [dict(n) for n in _NOTICES]}
+
+
+def dismiss_notice(notice_id):
+    with _LOCK:
+        _NOTICES[:] = [n for n in _NOTICES if n["id"] != notice_id]
+
+
 def describe(db_subs, db_epub):
     subs, books = paths.subs_dir(), paths.books_dir()
-    subs_disk = _count_files(subs, (".srt", ".ass", ".ssa"), skip_dot=False)
-    books_disk = _count_files(books, ".epub", skip_dot=True)
-    listed = filtered_rows(paths.filtered_list())
-    for disk, media in ((subs_disk, "subs"), (books_disk, "epub")):
-        if disk:
-            disk["filtered"] = sum(1 for r in listed if r["media"] == media)
+    fig = figures()
     return {
         "installed": paths.INSTALLED,
         "subs_dir": subs,
         "books_dir": books,
         "data_dir": paths.db_dir(),
-        "db_default": paths.STORE_DIR,
-        "db_is_default": _same_folder(paths.db_dir(), paths.STORE_DIR),
+        "db_default": os.path.join(paths.STORE_DIR, paths.DB_FOLDER),
+        "db_is_default": _same_folder(paths.db_dir(), paths.default_db_dir()),
         "db_sizes": _db_sizes(paths.db_dir()),
         "port": paths.server_port(),
         "port_env": bool(os.environ.get("AOBANA_PORT")),
-        "subs_disk": subs_disk,
-        "books_disk": books_disk,
+        "subs_disk": fig["subs_disk"],
+        "books_disk": fig["books_disk"],
+        "counting": fig["counting"],
         "subs_indexed": _indexed(db_subs, "subtitles"),
         "books_indexed": _indexed(db_epub, "epubs"),
         "subs_outdated": outdated_sources(db_subs, "subs"),
@@ -151,7 +277,9 @@ def move_databases(target):
 def _move_databases(target):
     raw = str(target or "").strip().strip('"')
     default = raw in ("", "default")
-    dest = paths.STORE_DIR if default else os.path.abspath(os.path.expanduser(raw))
+    dest = os.path.join(paths.STORE_DIR, paths.DB_FOLDER) if default else os.path.abspath(os.path.expanduser(raw))
+    if default:
+        os.makedirs(dest, exist_ok=True)
     src = paths.db_dir()
     if not os.path.isdir(dest):
         return "not_found", []
@@ -167,6 +295,8 @@ def _move_databases(target):
         os.remove(probe)
     except OSError:
         return "not_writable", []
+    from engine import clear_disk_cache
+    clear_disk_cache()
 
     renamed, copied = [], []
     try:
@@ -233,6 +363,15 @@ def _after_db_change():
         threading.Thread(target=warm_media_library, daemon=True).start()
     except Exception:
         pass
+
+
+def set_search_cache(on):
+    cfg = paths.load_config()
+    if on:
+        cfg["search_cache"] = True
+    else:
+        cfg.pop("search_cache", None)
+    paths.save_config(cfg)
 
 
 def set_port(value):
@@ -423,6 +562,10 @@ def _run(stages, outdated=False):
             pass
         _set(running=False, stopping=False, stage="done", current="", finished_at=time.time())
         _clear_stop("index")
+        _FIG_STALE["stale"] = True
+        seconds = time.time() - (_STATE.get("started_at") or time.time())
+        if seconds > LONG_TASK_SECONDS:
+            _add_notice("index", seconds, stopped=bool(_STATE.get("stopped")), error=_STATE.get("error"))
         try:
             os.remove(_run_marker())
         except OSError:
@@ -526,6 +669,9 @@ def _run_analysis(only):
         with _LOCK:
             _ASTATE.update(running=False, stopping=False, current="", finished_at=time.time())
         _clear_stop("check")
+        seconds = time.time() - (_ASTATE.get("started_at") or time.time())
+        if seconds > LONG_TASK_SECONDS:
+            _add_notice("check", seconds, stopped=bool(_ASTATE.get("stopped")), error=_ASTATE.get("error"))
 
 
 def _report_path():

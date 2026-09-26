@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.3 — Faster search on big libraries, search inside a title
+
+- **Faster search**: common words are found in up to half the time, with half the memory. The
+  first **Index library** after updating adds a table of line lengths to the index, once; nothing
+  is read again, but on a very large library that run takes a while.
+- **Search cache** (optional, off by default): turned on in its own box in the Library tab, a
+  search that took a while is kept on disk (up to 1 GB, the oldest dropped first), so it shows at
+  once, even after a restart. The box shows the space it uses and clears it at any time;
+  turning it off keeps what was saved.
+- **Search inside a title**: an opened show or book in the Media tab has a search bar, for its
+  episode and chapter names or for the text of its lines; matches are listed under their episode
+  or chapter, in order, a page at a time.
+- **Several titles at once**: clicking a title in the search sidebar adds it to the filter or takes
+  it out; **All** clears it. Each chosen title has its own ✕ above the results.
+- **The Library tab** shows its folder figures at once, from the last count, and updates them in
+  the background. When indexing, **Check library** or a first count took more than a minute, a
+  notice says so on every tab until it is closed.
+- **The Guide** shows the version and has a **Changelog** button.
+- **A `db` folder**: the databases and what is kept beside them move into a folder of their own
+  inside Aobana's data folder, at the first start after updating; config and logs stay where they
+  are. A databases folder you chose yourself is not moved. On Android, the settings, the logs and
+  the databases move into the `data` folder inside Aobana, the databases into `data/db`.
+- **Big book libraries**: chapter lists and the Media tab's counts read a chapter table that the
+  first index run after updating builds once.
+- **Check library** counts steadily through a large library, and **Stop** stops it within a second.
+- **Chapter names**: a chapter named only by a file number shows its place in the book.
+- **Fixes**: a book with an extremely long paragraph no longer breaks the results page; showing the
+  context of a book line no longer hangs on a large library.
+
 ## 1.2 — One-click updates, folder pickers, settings that follow the port
 
 - **Update automatically**: the new-version window can download the release, check it, install it

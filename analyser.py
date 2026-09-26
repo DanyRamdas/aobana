@@ -156,7 +156,8 @@ def _measure(conn, media, root, files, workers):
         print(f"TOTAL {len(todo)}", flush=True)
     fn = _measure_sub if media == "subs" else _measure_book
     last = time.monotonic()
-    for i, (name, row, error) in enumerate(parallel_map(fn, todo, workers, chunksize=8 if media == "subs" else 1), 1):
+    for i, (name, row, error) in enumerate(parallel_map(fn, todo, workers, chunksize=8 if media == "subs" else 1,
+                                                        ordered=False, stop=stop_requested), 1):
         if stop_requested():
             break
         if PROGRESS:
@@ -171,6 +172,9 @@ def _measure(conn, media, root, files, workers):
         if time.monotonic() - last > 2:
             conn.commit()
             last = time.monotonic()
+    if stop_requested():
+        conn.commit()
+        return {}
     names = set(stat)
     conn.executemany("DELETE FROM files WHERE media = ? AND relpath = ?",
                      [(media, n) for n in set(cached) - names])

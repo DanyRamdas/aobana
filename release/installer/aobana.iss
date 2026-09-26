@@ -155,6 +155,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Type: files; Name: "{autoprograms}\露草 Aobana.lnk"
 Type: files; Name: "{autodesktop}\露草 Aobana.lnk"
 Type: files; Name: "{app}\Aobana-debug.bat"
+Type: files; Name: "{app}\README.md"
+Type: files; Name: "{app}\README.ja.md"
+Type: files; Name: "{app}\requirements.txt"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -225,7 +228,7 @@ end;
 
 function DefaultDb(): String;
 begin
-  Result := ExpandConstant('{localappdata}\Aobana');
+  Result := ExpandConstant('{localappdata}\Aobana\db');
 end;
 
 function DbChanged(): Boolean;
@@ -885,6 +888,11 @@ begin
   Result := (Dir <> '') and (FileExists(AddBackslash(Dir) + 'subs.db') or FileExists(AddBackslash(Dir) + 'epub.db'));
 end;
 
+function OwnDb(): Boolean;
+begin
+  Result := SameFolder(UDb, UStore) or SameFolder(UDb, UStore + '\db');
+end;
+
 procedure LocateData();
 var
   Cfg, Marker, S, B: String;
@@ -895,7 +903,10 @@ begin
   Marker := ReadText(MarkerPath());
   if not (JsonField(Cfg, 'db_dir', UDb, IsStr) and IsStr and (UDb <> '')) then
     if not (JsonField(Marker, 'db_dir', UDb, IsStr) and IsStr and (UDb <> '')) then
-      UDb := UStore;
+      if HasIndex(UStore) and not HasIndex(UStore + '\db') then
+        UDb := UStore
+      else
+        UDb := UStore + '\db';
   if not ReadFolders(Cfg, S, B) then
     if not ReadFolders(Marker, S, B) then
     begin
@@ -905,7 +916,7 @@ begin
   USubs := RemoveBackslashUnlessRoot(Trim(S));
   UBooks := RemoveBackslashUnlessRoot(Trim(B));
   UOffer[0] := FileExists(UStore + '\config.json') or DirExists(UStore + '\logs');
-  UOffer[1] := SameFolder(UDb, UStore) and HasIndex(UDb);
+  UOffer[1] := OwnDb() and HasIndex(UDb);
   UOffer[2] := IsDefaultMedia(USubs, 0) and DirExists(USubs);
   UOffer[3] := IsDefaultMedia(UBooks, 1) and DirExists(UBooks);
   Log('Uninstall data: store=' + UStore + ' db=' + UDb + ' subs=' + USubs + ' books=' + UBooks);
@@ -1002,7 +1013,7 @@ begin
       Kept := Kept + #13#10 + FmtMessage(CustomMessage('UninstKeptSubs'), [USubs]);
     if (UBooks <> '') and not UOffer[3] and DirExists(UBooks) then
       Kept := Kept + #13#10 + FmtMessage(CustomMessage('UninstKeptBooks'), [UBooks]);
-    if not SameFolder(UDb, UStore) and HasIndex(UDb) then
+    if not OwnDb() and HasIndex(UDb) then
       Kept := Kept + #13#10 + FmtMessage(CustomMessage('UninstKeptIndex'), [UDb]);
     if Kept <> '' then
     begin
@@ -1157,11 +1168,19 @@ begin
     end;
     if UChosen[1] then
     begin
-      Names := IndexFiles();
-      for I := 0 to GetArrayLength(Names) - 1 do
+      if SameFolder(UDb, UStore + '\db') then
       begin
-        DeleteFile(UStore + '\' + Names[I]);
-        NoteLeft(UStore + '\' + Names[I], Left);
+        DelTree(UDb, True, True, True);
+        NoteLeft(UDb, Left);
+      end
+      else
+      begin
+        Names := IndexFiles();
+        for I := 0 to GetArrayLength(Names) - 1 do
+        begin
+          DeleteFile(UStore + '\' + Names[I]);
+          NoteLeft(UStore + '\' + Names[I], Left);
+        end;
       end;
     end;
     RemoveDir(UStore);
