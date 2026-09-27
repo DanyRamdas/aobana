@@ -4,6 +4,7 @@
   <meta name="aobana-boot" content="{{ boot }}">
   <meta name="aobana-version" content="{{ version }}">
   <meta name="aobana-handoff-pending" content="{{ '1' if handoff_pending else '' }}">
+  <script type="application/json" id="aobana-media">{{ media_boot|tojson }}</script>
   {% if handoff %}<script type="application/json" id="aobana-handoff">{{ handoff|tojson }}</script>{% endif %}
   <script>
     (function () {
@@ -210,6 +211,12 @@
     input, button, select, textarea { font-family: inherit; }
     a { color: var(--link); }
     [hidden] { display: none !important; }
+    .set-media-row { border-top: 1px solid var(--border-color); margin-top: 0.9em; padding-top: 0.9em; }
+    .set-media-head { align-items: center; margin-bottom: 0.7em; }
+    .set-drop-ask .notice { margin: 0 0 0.6em; }
+    .set-media-head > strong { min-width: 7em; }
+    #setup-rows { text-align: left; }
+    #setup-rows .btns { justify-content: flex-start; }
     .muted { color: var(--text-muted); }
 
     .topbar {
@@ -365,6 +372,7 @@
     }
     .seg-btn:hover { color: var(--text-main); background: var(--bg-hover); }
     .seg-btn.active { background: var(--accent); color: var(--on-accent); }
+    .seg.seg-many .seg-btn { flex: 1 1 auto; padding: 0 4px; }
     .side-row { display: flex; gap: 6px; align-items: center; }
     .side-row .dd { flex: 1; min-width: 0; }
     .sq-btn {
@@ -516,6 +524,10 @@
     .episode-line .main-sentence { line-height: 1.4em; font-size: 0.98em; }
     .episode-line .actions-box { opacity: 0.5; transition: opacity 0.2s; }
     .episode-line:hover .actions-box, .episode-line .actions-box:focus-within { opacity: 1; }
+    .page-mark {
+      padding: 4px 10px; border-top: 1px solid var(--border-color);
+      font-size: 0.78em; font-weight: 700; color: var(--text-faint);
+    }
 
     mark { background: none; color: var(--hl-mark); font-weight: bold; padding: 0; }
     b { color: var(--hl-bold); font-weight: bold; }
@@ -625,10 +637,13 @@
     }
     .media-kind.epub { color: var(--gold); }
     .media-kind.subs { color: var(--accent-text); }
+    .media-kind.manga { color: var(--ok); }
     .media-names { flex: 1; min-width: 0; }
     .media-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-title); }
     .media-row:has(.media-kind.subs) .media-name,
-    .media-row .media-kind.subs + .media-names .media-name {
+    .media-row .media-kind.subs + .media-names .media-name,
+    .media-row:has(.media-kind.manga) .media-name,
+    .media-row .media-kind.manga + .media-names .media-name {
       transform: translateY(-2px);
     }
     .media-author { font-size: 0.82em; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -735,6 +750,7 @@
     .an-row.kept { background: var(--bg-btn); }
     .an-row.filtered { opacity: 0.5; }
     .an-group { border-bottom: 2px solid var(--border-color); }
+    .an-after { margin-top: 0.8em; }
     details.log summary { cursor: pointer; color: var(--text-muted); font-size: 0.88em; margin-top: 0.8em; }
     details.log pre { max-height: 18em; overflow: auto; font-size: 0.8em; }
 
@@ -769,6 +785,10 @@
     .modal-card.wide { max-width: 560px; }
     .modal-card.welcome { max-width: 600px; }
     .modal-card.welcome.big { max-width: 860px; }
+    #welcome-card { display: flex; flex-direction: column; }
+    #setup-step:not([hidden]) { flex: 1; display: flex; flex-direction: column; }
+    #setup-step > .btns { margin-top: auto; }
+    .progress-text + .btns { margin-top: 0.7em; }
     .whatsnew-sub { margin: 0.2em 0 0.6em; font-size: 1em; color: var(--text-title); text-align: left; }
     .whatsnew-list { text-align: left; margin: 0 0 1.4em; padding-left: 1.3em; color: var(--text-main);
                      font-size: max(1rem, 1em); line-height: 1.75; }
@@ -847,6 +867,9 @@
     .topbar.c-guide .nav-tab[data-tab="guide"] { padding: 7px 10px; gap: 0; }
     .topbar.c-guide .nav-tab[data-tab="guide"] span { display: none; }
 
+    .topbar.c-settings .nav-tab[data-tab="settings"] { padding: 7px 10px; gap: 0; }
+    .topbar.c-settings .nav-tab[data-tab="settings"] span { display: none; }
+
     .topbar.c-library .nav-tab[data-tab="library"] { padding: 7px 10px; gap: 0; }
     .topbar.c-library .nav-tab[data-tab="library"] span { display: none; }
 
@@ -917,12 +940,12 @@
     let LANG = document.documentElement.getAttribute('lang') === 'en' ? 'en' : 'ja';
     const I18N = {
       ja: {
-        app: '露草', tab_search: '検索', tab_media: 'メディア', tab_library: 'ライブラリ', tab_guide: 'ガイド',
+        app: '露草', tab_search: '検索', tab_media: 'メディア', tab_library: 'ライブラリ', tab_settings: '設定', tab_guide: 'ガイド',
         tab_saved: 'お気に入り',
         title_results: '「{q}」の例文',
         theme_label: 'テーマ',
         theme_paper: '紙', theme_haze: '霞', theme_night: '夜', theme_midnight: '深夜',
-        media_all: '両方', media_subs: '字幕', media_epub: '書籍',
+        media_all: '全て', media_both: '両方', media_subs: '字幕', media_epub: '書籍', media_manga: '漫画',
         furigana: 'ふりがなの表示 / 非表示 (F)', shortcuts: 'ショートカット (?)',
         sort_recommended: 'おすすめ', sort_chrono: '時系列順', sort_desc: '長い順', sort_asc: '短い順', sort_random: 'ランダム',
         sort_title: '例文の並べ替え',
@@ -933,25 +956,27 @@
         chars: '{n} 字', filtering: '絞り込み中:', remove_filter: '「{f}」を外す',
         folder_hint: '左の作品名を押すと、その作品の中だけを検索します。いくつでも選べます。',
         empty_title: 'ライブラリが空です',
-        empty_body: '字幕（.srt / .ass）と電子書籍（.epub）をフォルダに入れて、ライブラリタブでインデックスを作成すると検索できるようになります。',
+        empty_body: '字幕（.srt / .ass）、電子書籍（.epub）、漫画（.mokuro）をフォルダに入れて、ライブラリタブでインデックスを作成すると検索できるようになります。',
         empty_btn: 'ライブラリを開く',
         no_saved: 'お気に入りはまだありません。例文の ★ を押すと、ここに保存されます。',
         saved_count: '{n} 件',
-        media_summary: '{shows} 作品 · {books} 冊', media_filter: 'タイトル・著者で絞り込み',
+        media_summary_subs: '{n} 作品', media_summary_epub: '{n} 冊', media_summary_manga: '{n} シリーズ', media_filter: 'タイトル・著者で絞り込み',
         media_matches: '該当 {n} 件', media_preparing: 'メディア一覧を準備しています',
         page_size_title: '一度に読み込む件数', page_size_n: '{n} 件ずつ', page_size_all: 'すべて',
         eta_left: '残り約 {t}', eta_s: '{n} 秒', eta_m: '{m} 分', eta_ms: '{m} 分 {s} 秒', eta_soon: 'まもなく完了',
         media_none: '該当する作品はありません。', back_media: 'メディア一覧',
         media_mode_title: 'タイトル', media_mode_content: '本文',
-        media_detail_filter_subs: '話タイトルで絞り込み', media_detail_filter_epub: '章タイトルで絞り込み',
-        stat_eps: '{n} 話', stat_lines: '{n} 行', stat_chaps: '{n} 章', stat_sents: '{n} 文',
-        kind_subs: '字幕', kind_epub: '書籍',
+        media_detail_filter_subs: '話タイトルで絞り込み', media_detail_filter_epub: '章タイトルで絞り込み', media_detail_filter_manga: '巻タイトルで絞り込み',
+        stat_eps: '{n} 話', stat_lines: '{n} 行', stat_chaps: '{n} 章', stat_sents: '{n} 文', stat_vols: '{n} 巻',
+        kind_subs: '字幕', kind_epub: '書籍', kind_manga: '漫画', page_n: '{n} ページ',
         sc_title: 'ショートカット', sc_focus: '検索バーにフォーカス', sc_next: '次のカードを選択', sc_prev: '前のカードを選択',
         sc_context: '文脈の展開 / 折りたたみ', sc_save: 'お気に入りに追加 / 解除', sc_furigana: 'ふりがなの表示 / 非表示',
         sc_help: 'このヘルプの表示 / 非表示', sc_close: 'ダイアログを閉じる', close: '閉じる',
         welcome_title: '露草へようこそ',
-        welcome_body: '露草（あおばな）は、お手持ちの字幕と電子書籍から日本語の例文を探せる、オフラインの検索エンジンです。例文はふりがな付きで表示され、前後の文脈も確認できます。',
-        welcome_s1: '字幕（.srt / .ass）と電子書籍（.epub）を所定のフォルダに入れる（場所は<b>ライブラリ</b>タブで確認できる）',
+        welcome_body: '露草（あおばな）は、お手持ちの字幕・電子書籍・漫画から日本語の例文を探せる、オフラインの検索エンジンです。例文はふりがな付きで表示され、前後の文脈も確認できます。',
+        welcome_s1: '字幕（.srt / .ass）、電子書籍（.epub）、漫画（.mokuro）を所定のフォルダに入れる（場所は<b>設定</b>タブで確認できる）',
+        welcome_s0_setup: '次の画面で、使うメディアとそのフォルダを選ぶ',
+        welcome_s1_setup: '字幕（.srt / .ass）、電子書籍（.epub）、漫画（.mokuro）をそのフォルダに入れる',
         welcome_s2: '<b>ライブラリ</b>タブで「インデックス作成」を押す',
         welcome_s3: '<b>検索</b>タブで単語や表現を検索する',
         welcome_more: '使い方の詳細は<b>ガイド</b>タブにあります。',
@@ -973,15 +998,15 @@
         whatsnew_title: 'Aobana {version} に更新しました', whatsnew_sub: '主な変更点',
         whatsnew_none: 'リリースノートを読み込めませんでした。', whatsnew_more: '詳しく見る',
         lib_title: 'ライブラリ',
-        lib_lead: 'Aobana は、下の2つのフォルダにあるファイルだけを読み込みます。ファイルを追加・削除・変更したら「インデックス作成」を押してください。変更のあったファイルだけが処理されるので、2回目以降は短時間で終わります。',
-        lib_step1_t: 'ファイルを入れる', lib_step1_d: '字幕は作品ごとのフォルダに、書籍はそのまま書籍フォルダに入れます。',
+        lib_lead: 'Aobana は、下のフォルダにあるファイルだけを読み込みます。ファイルを追加・削除・変更したら「インデックス作成」を押してください。変更のあったファイルだけが処理されるので、2回目以降は短時間で終わります。',
+        lib_step1_t: 'ファイルを入れる', lib_step1_d: '字幕は作品ごとのフォルダに、書籍はそのまま書籍フォルダに、漫画は .mokuro ファイルをシリーズごとのフォルダに入れます。',
         lib_step2_t: 'インデックス作成', lib_step2_d: '文を解析して検索用のデータベースを作ります。大きなライブラリでは数分かかります。',
         lib_step3_t: '検索する', lib_step3_d: '完了したら、検索タブで検索できます。',
-        lib_subs: '字幕フォルダ', lib_books: '書籍フォルダ',
+        lib_subs: '字幕フォルダ', lib_books: '書籍フォルダ', lib_manga: '漫画フォルダ',
         lib_open: 'フォルダを開く', lib_change: '変更', lib_save: '保存', lib_cancel: 'キャンセル',
         lib_change_hint: '既存のフォルダの場所を貼り付けてください',
         lib_picking: '開いたウィンドウでフォルダを選んでください。',
-        lib_disk_subs: 'フォルダ内: 字幕ファイル {n} 件', lib_disk_books: 'フォルダ内: .epub ファイル {n} 件',
+        lib_disk_subs: 'フォルダ内: 字幕ファイル {n} 件', lib_disk_books: 'フォルダ内: .epub ファイル {n} 件', lib_disk_manga: 'フォルダ内: .mokuro ファイル {n} 件',
         lib_other: '対象外のファイル {n} 件（.srt / .ass / .ssa / .epub 以外は無視されます）',
         lib_filtered: 'インデックスしないファイル {n} 件（ライブラリの点検で選んだもの）',
         lib_missing: 'このフォルダは見つかりません。', lib_counting: '（数えています…）',
@@ -992,10 +1017,14 @@
         notice_figures: 'ライブラリ タブのフォルダの集計が完了しました（{time}）。',
         lib_indexed_subs: 'インデックス済み: {files} ファイル · {rows} 行',
         lib_indexed_books: 'インデックス済み: {files} 冊 · {rows} 文',
+        lib_indexed_manga: 'インデックス済み: {files} 巻 · {rows} 行',
         lib_outdated: '以前のバージョンでインデックスされたファイルがあります（字幕 {subs} · 書籍 {books}）。書籍の章の分け方と字幕の読み込みの改善は、再インデックスするまで反映されません。',
         lib_outdated_run: '再インデックスする',
+        lib_tables: 'インデックスの一度だけの更新がまだです（{which}）。更新するまでは、大きなライブラリでは検索や書籍を開くのに時間がかかります。ファイルは読み直しません。',
+        lib_tables_run: '更新する',
+        lib_phase_chapters: '章の表を作成中…', lib_phase_lengths: '行の長さの表を作成中…', lib_phase_lexicon: 'ふりがなの表を作成中…',
         reindex_title: '再インデックスをおすすめします',
-        reindex_body: 'このバージョンでは、書籍の章の分け方と字幕の読み込みが改善されました。以前のバージョンでインデックスしたファイル（字幕 {subs} · 書籍 {books}）は、再インデックスするまで古い結果のままです。<b>ライブラリ</b>タブからワンクリックで更新できます。',
+        reindex_body: 'このバージョンでは、一部のファイルの読み込み方が改善されました。以前のバージョンでインデックスしたファイル（字幕 {subs} · 書籍 {books}）は、再インデックスするまで古い結果のままです。<b>ライブラリ</b>タブからワンクリックで更新できます。',
         reindex_later: 'あとで', reindex_go: 'ライブラリを開く',
         checkfirst_title: 'インデックスの前に、ライブラリを点検しますか？',
         checkfirst_body: '点検すると、日本語以外のファイルと重複（同じ本の別ファイル、同じエピソードの別リッピング）を一覧にします。どれを外すかは一覧から選べます。点検しない場合は、フォルダ内のファイルがすべてインデックスされます。この確認は今回だけです。',
@@ -1011,32 +1040,48 @@
         lib_unfinished_outdated: '前回の再インデックスは最後まで終わりませんでした（ウィンドウが閉じられたようです）。読み直しの済んだファイルは新しく、残りは前の結果のまま検索できます。続きは「再インデックスする」から実行できます。',
         an_stopped: '点検を中止しました。ここまでの分は保存されています。「点検する」で続きから再開できます。',
         lib_run: 'インデックス作成', lib_running: '作成中…',
-        lib_stage_subs: '字幕', lib_stage_epub: '書籍',
+        lib_stage_subs: '字幕', lib_stage_epub: '書籍', lib_stage_manga: '漫画',
         lib_done: 'インデックスの作成が完了しました。', lib_done_search: '検索をはじめる',
         lib_col_new: '追加・更新', lib_col_same: '変更なし', lib_col_removed: '削除',
         lib_failed: '読み込めなかったファイル（.epub は破損、または DRM で保護されている可能性があります）:',
         lib_root_missing: 'フォルダが見つからないため、この段階は中止されました（何も削除されていません）: {s}',
         lib_log: '詳細ログ', lib_error: 'エラー: {e}',
-        lib_err_busy: 'インデックス作成中は変更できません。', lib_err_notfound: 'そのフォルダは存在しません。',
+        lib_err_busy: 'インデックス作成中は変更できません。', lib_err_notfound: 'そのフォルダは存在しません。', lib_err_notfull: '{path} のような完全なパスを入力してください。', setup_err_make: 'そのフォルダを作成できません。別の場所を選んでください。',
         lib_data: 'データベースの保存先', lib_saved: '保存しました。次回のインデックス作成から反映されます。',
-        lib_db_lead: 'subs.db と epub.db を、指定した既存のフォルダへそのまま移動します。設定とログは移動しません。',
+        lib_db_lead: 'subs.db、epub.db、manga.db を、指定した既存のフォルダへそのまま移動します。設定とログは移動しません。',
         lib_db_move: '移動', lib_db_default: '既定の場所に戻す', lib_db_is_default: '既定の場所です。',
         lib_db_moving: '移動中です…別のドライブへの移動は数十秒かかることがあります。',
         lib_db_none: 'まだありません', lib_db_moved: 'データベースを移動しました。',
         lib_db_old_kept: 'データベースを移動しました。ただし使用中のため、元のファイルを削除できませんでした。不要であれば手動で削除してください: {files}',
         lib_db_err_busy: 'インデックス作成中は移動できません。', lib_db_err_same: 'データベースはすでにこのフォルダにあります。',
-        lib_db_err_exists: 'そのフォルダにはすでに subs.db または epub.db があります。上書きはしません。',
+        lib_db_err_exists: 'そのフォルダにはすでに subs.db、epub.db または manga.db があります。上書きはしません。',
         lib_db_err_notwritable: 'そのフォルダには書き込めません。',
         lib_db_err_failed: '移動できませんでした。データベースは元の場所のままです。',
         lib_cache_title: '検索キャッシュ', lib_cache: '保存済み: {n} 件 · {size}',
         lib_cache_lead: 'オンにすると、1 秒以上かかった検索の結果をデータベースの隣に保存し、再起動後もすぐに表示します（最大 1 GB）。大きなライブラリで同じ語をよく検索する場合に役立ちます。多くの場合は不要です。オフにしても保存済みの結果は残り、「検索キャッシュを消去」でいつでも削除できます。',
         lib_cache_on: 'オン', lib_cache_off: 'オフ',
         lib_cache_clear: '検索キャッシュを消去', lib_cache_cleared: '検索キャッシュを消去しました。',
-        lib_not_set: '未設定です。「変更」からフォルダを指定してください。',
+        lib_not_set: '未設定です。設定タブでフォルダを指定してください。',
+        set_media_title: 'メディア',
+        set_media_lead: '使うメディアをオンにします。オフにしたメディアは検索・メディア・ライブラリに表示されず、インデックスはそのまま残ります。',
+        set_media_subs: '字幕', set_media_books: '書籍', set_media_manga: '漫画',
+        set_not_set: '未設定です。「変更」からフォルダを指定してください。',
+        set_drop: 'データベースを削除（{size}）', set_dropped: 'データベースを削除しました。',
+        set_drop_kept: '使用中のファイルが残りました。Aobana を再起動してから、もう一度削除してください。',
+        set_drop_busy: 'インデックス作成中や点検中は削除できません。',
+        set_drop_confirm: '{media}のデータベース {file}（{size}）を削除します。元に戻すには、もう一度インデックス作成が必要です。',
+        set_drop_yes: '削除する',
+        off_title: 'メディアがすべてオフです', off_btn: '設定を開く',
+        off_body: 'すべてのメディアがオフになっています。設定タブでオンにすると検索できます。',
+        setup_open: 'Aobana を設定する', setup_title: 'はじめの設定',
+        setup_lead: '使うメディアをオンにしてください。フォルダは下の場所に作られます。変えるときは「参照」を押してください。',
+        setup_browse: '参照', setup_back: '戻る', setup_pick_one: '少なくとも1つをオンにしてください。',
+        upgrade_title: 'メディアとフォルダ', upgrade_lead: 'このバージョンから漫画（.mokuro）も検索できます。使うメディアをオンにして、フォルダを確認してください。あとから設定タブで変えられます。', upgrade_save: '保存',
         lib_root_not_set: 'フォルダが未設定のため、この段階は省略されました: {s}',
-        lib_scope_all: '字幕と書籍', lib_scope_subs: '字幕のみ', lib_scope_epub: '書籍のみ',
+        lib_scope_all: 'すべてのメディア', lib_scope_subs: '字幕のみ', lib_scope_epub: '書籍のみ', lib_scope_manga: '漫画のみ',
         lib_skipped_clash: '同じ名前になるため読み込まなかったファイル（字幕フォルダ直下のファイルと、同名の作品フォルダ内のファイル）:',
         lib_estimating: '所要時間とサイズを見積もっています…',
+        lib_nothing: 'インデックスするファイルがありません。下のフォルダにファイルを入れてから「インデックス作成」を押してください。',
         est_title: 'インデックス作成の見積もり',
         est_new: '新しいファイル: {n} 件', est_db: '{name}: 現在 {now} → 約 {after}',
         est_total: 'データベース合計: 約 {n}', est_time: '所要時間: 約 {t}（{w} プロセス）',
@@ -1055,6 +1100,7 @@
         an_why_lang: '{lines} 行のうち日本語 {ja}・中国語 {zh}・英語 {en}',
         an_why_dup: '{keep} と {pct}% 同じ内容', an_why_bytes: '{keep} と同一ファイル', an_why_subplz: 'SubPlz の組 · {keep} を残す',
         an_kept: 'この組で残すファイル', an_summary: '{files} ファイルを点検 · {when}',
+        an_invert: '選択を反転',
         an_filter: 'チェックしたファイルをインデックスしない',
         an_filtered_done: '{n} 件をインデックスから外す対象にしました（ファイルはそのままです）。次にインデックスを作成すると検索から外れます。',
         an_filter_failed: '外せなかったファイル（点検のあとでフォルダが変わりました）:',
@@ -1080,12 +1126,12 @@
         reset_export: 'お気に入りを書き出す', reset_confirm: '初期化する',
       },
       en: {
-        app: 'Aobana', tab_search: 'Search', tab_media: 'Media', tab_library: 'Library', tab_guide: 'Guide',
+        app: 'Aobana', tab_search: 'Search', tab_media: 'Media', tab_library: 'Library', tab_settings: 'Settings', tab_guide: 'Guide',
         tab_saved: 'Favorites',
         title_results: 'Example sentences for 「{q}」',
         theme_label: 'Theme',
         theme_paper: 'Paper', theme_haze: 'Haze', theme_night: 'Night', theme_midnight: 'Midnight',
-        media_all: 'All', media_subs: 'Subs', media_epub: 'Books',
+        media_all: 'All', media_both: 'All', media_subs: 'Subs', media_epub: 'Books', media_manga: 'Manga',
         furigana: 'Show / hide furigana (F)', shortcuts: 'Keyboard shortcuts (?)',
         sort_recommended: 'Recommended', sort_chrono: 'Chronological', sort_desc: 'Longest', sort_asc: 'Shortest', sort_random: 'Random',
         sort_title: 'Sort sentences',
@@ -1096,25 +1142,27 @@
         chars: '{n} {n|char|chars}', filtering: 'Filtered to:', remove_filter: 'Remove "{f}"',
         folder_hint: 'Click a title on the left to search inside it only. You can pick several.',
         empty_title: 'Your library is empty',
-        empty_body: 'Put subtitle files (.srt / .ass) and e-books (.epub) in your folders, then build the index in the Library tab to start searching.',
+        empty_body: 'Put subtitle files (.srt / .ass), e-books (.epub) and manga (.mokuro) in your folders, then build the index in the Library tab to start searching.',
         empty_btn: 'Open Library',
         no_saved: 'No favorites yet. Press ★ on a sentence to save it here.',
         saved_count: '{n} saved',
-        media_summary: '{shows} {shows|show|shows} · {books} {books|book|books}', media_filter: 'Filter by title or author',
+        media_summary_subs: '{n} {n|show|shows}', media_summary_epub: '{n} {n|book|books}', media_summary_manga: '{n} manga {n|series|series}', media_filter: 'Filter by title or author',
         media_matches: '{n} matching', media_preparing: 'Preparing the media list',
         page_size_title: 'How many to load at once', page_size_n: '{n} at a time', page_size_all: 'All',
         eta_left: 'About {t} left', eta_s: '{n} s', eta_m: '{m} min', eta_ms: '{m} min {s} s', eta_soon: 'Almost done',
         media_none: 'Nothing matches.', back_media: 'All media',
         media_mode_title: 'Titles', media_mode_content: 'Content',
-        media_detail_filter_subs: 'Filter episode titles', media_detail_filter_epub: 'Filter chapter titles',
-        stat_eps: '{n} {n|episode|episodes}', stat_lines: '{n} {n|line|lines}', stat_chaps: '{n} {n|chapter|chapters}', stat_sents: '{n} {n|sentence|sentences}',
-        kind_subs: 'SUBS', kind_epub: 'BOOK',
+        media_detail_filter_subs: 'Filter episode titles', media_detail_filter_epub: 'Filter chapter titles', media_detail_filter_manga: 'Filter volume titles',
+        stat_eps: '{n} {n|episode|episodes}', stat_lines: '{n} {n|line|lines}', stat_chaps: '{n} {n|chapter|chapters}', stat_sents: '{n} {n|sentence|sentences}', stat_vols: '{n} {n|volume|volumes}',
+        kind_subs: 'SUBS', kind_epub: 'BOOK', kind_manga: 'MANGA', page_n: 'p. {n}',
         sc_title: 'Keyboard shortcuts', sc_focus: 'Focus the search bar', sc_next: 'Select the next card', sc_prev: 'Select the previous card',
         sc_context: 'Show / hide context', sc_save: 'Add to / remove from favorites', sc_furigana: 'Show / hide furigana',
         sc_help: 'Show / hide this help', sc_close: 'Close a dialog', close: 'Close',
         welcome_title: 'Welcome to Aobana',
-        welcome_body: 'Aobana (露草) is an offline search engine for Japanese example sentences, built from your own subtitles and e-books. Sentences come with furigana, and you can open the surrounding context.',
-        welcome_s1: 'Put subtitle files (.srt / .ass) and e-books (.epub) in your folders (the <b>Library</b> tab shows where)',
+        welcome_body: 'Aobana (露草) is an offline search engine for Japanese example sentences, built from your own subtitles, e-books and manga. Sentences come with furigana, and you can open the surrounding context.',
+        welcome_s1: 'Put subtitle files (.srt / .ass), e-books (.epub) and manga (.mokuro) in your folders (the <b>Settings</b> tab shows where)',
+        welcome_s0_setup: 'Choose what you use, and its folders, on the next screen',
+        welcome_s1_setup: 'Put subtitle files (.srt / .ass), e-books (.epub) and manga (.mokuro) in those folders',
         welcome_s2: 'Press "Index library" in the <b>Library</b> tab',
         welcome_s3: 'Search for words and phrases in the <b>Search</b> tab',
         welcome_more: 'The <b>Guide</b> tab explains everything in more detail.',
@@ -1136,15 +1184,15 @@
         whatsnew_title: 'Updated to Aobana {version}', whatsnew_sub: 'Notable changes',
         whatsnew_none: 'The release notes could not be loaded.', whatsnew_more: 'Read more',
         lib_title: 'Library',
-        lib_lead: 'Aobana only reads files in the two folders below. Whenever you add, remove or change files, press "Index library". Only changed files are processed, so later runs are quick.',
-        lib_step1_t: 'Add files', lib_step1_d: 'Subtitles go in one folder per show; books go straight into the books folder.',
+        lib_lead: 'Aobana only reads files in the folders below. Whenever you add, remove or change files, press "Index library". Only changed files are processed, so later runs are quick.',
+        lib_step1_t: 'Add files', lib_step1_d: 'Subtitles go in one folder per show; books go straight into the books folder; manga .mokuro files go in one folder per series.',
         lib_step2_t: 'Index library', lib_step2_d: 'Every sentence is analyzed into a search database. A large library can take a few minutes.',
         lib_step3_t: 'Search', lib_step3_d: 'When it finishes, go to the Search tab.',
-        lib_subs: 'Subtitles folder', lib_books: 'Books folder',
+        lib_subs: 'Subtitles folder', lib_books: 'Books folder', lib_manga: 'Manga folder',
         lib_open: 'Open folder', lib_change: 'Change', lib_save: 'Save', lib_cancel: 'Cancel',
         lib_change_hint: 'Paste the path of an existing folder',
         lib_picking: 'Choose a folder in the window that opened.',
-        lib_disk_subs: 'In the folder: {n} subtitle {n|file|files}', lib_disk_books: 'In the folder: {n} .epub {n|file|files}',
+        lib_disk_subs: 'In the folder: {n} subtitle {n|file|files}', lib_disk_books: 'In the folder: {n} .epub {n|file|files}', lib_disk_manga: 'In the folder: {n} .mokuro {n|file|files}',
         lib_other: '{n} other {n|file|files} (anything that is not .srt / .ass / .ssa / .epub is ignored)',
         lib_filtered: '{n} {n|file|files} left out of the index (chosen in Check library)',
         lib_missing: 'This folder does not exist.', lib_counting: '(counting...)',
@@ -1155,10 +1203,14 @@
         notice_figures: 'The Library tab has finished counting the folders ({time}).',
         lib_indexed_subs: 'Indexed: {files} {files|file|files} · {rows} {rows|line|lines}',
         lib_indexed_books: 'Indexed: {files} {files|book|books} · {rows} {rows|sentence|sentences}',
+        lib_indexed_manga: 'Indexed: {files} {files|volume|volumes} · {rows} {rows|line|lines}',
         lib_outdated: 'Some files were indexed by an earlier version ({subs} subtitle {subs|file|files} · {books} {books|book|books}). The improved book chapters and cleaner subtitles apply to them only after they are re-indexed.',
         lib_outdated_run: 'Re-index them',
+        lib_tables: 'Your index needs a one-time update ({which}). Until then, searching and opening a book can be slow on a large library. No files are read again.',
+        lib_tables_run: 'Update',
+        lib_phase_chapters: 'Building the chapter table...', lib_phase_lengths: 'Building the line-length table...', lib_phase_lexicon: 'Building the furigana table...',
         reindex_title: 'Re-indexing recommended',
-        reindex_body: 'This version splits books into chapters more accurately and reads subtitles more cleanly. Files indexed by an earlier version ({subs} subtitle {subs|file|files} · {books} {books|book|books}) keep the old result until they are re-indexed. The <b>Library</b> tab does it in one click.',
+        reindex_body: 'This version reads some files better. Files indexed by an earlier version ({subs} subtitle {subs|file|files} · {books} {books|book|books}) keep the old result until they are re-indexed. The <b>Library</b> tab does it in one click.',
         reindex_later: 'Later', reindex_go: 'Open Library',
         checkfirst_title: 'Check the library before indexing?',
         checkfirst_body: 'The check lists files that are not in Japanese and duplicates (one book in two files, other rips of one episode). You choose which to leave out. Without it, every file in the folders is indexed. You are only asked once.',
@@ -1174,32 +1226,48 @@
         lib_unfinished_outdated: 'The last re-index did not finish (the window was probably closed). The files it read again are updated; the rest keep their earlier result and can still be searched. "Re-index them" carries on.',
         an_stopped: 'Check stopped. What was checked so far is saved; "Check" carries on from there.',
         lib_run: 'Index library', lib_running: 'Indexing...',
-        lib_stage_subs: 'Subtitles', lib_stage_epub: 'Books',
+        lib_stage_subs: 'Subtitles', lib_stage_epub: 'Books', lib_stage_manga: 'Manga',
         lib_done: 'Indexing finished.', lib_done_search: 'Start searching',
         lib_col_new: 'Added / updated', lib_col_same: 'Unchanged', lib_col_removed: 'Removed',
         lib_failed: 'Files that could not be read (an .epub may be damaged, or protected by DRM):',
         lib_root_missing: 'This stage was stopped because its folder is missing (nothing was removed): {s}',
         lib_log: 'Detailed log', lib_error: 'Error: {e}',
-        lib_err_busy: 'Folders cannot be changed while indexing.', lib_err_notfound: 'That folder does not exist.',
+        lib_err_busy: 'Folders cannot be changed while indexing.', lib_err_notfound: 'That folder does not exist.', lib_err_notfull: 'Enter a full path, such as {path}.', setup_err_make: 'That folder cannot be made. Choose another place.',
         lib_data: 'Databases folder', lib_saved: 'Saved. It takes effect at the next indexing run.',
-        lib_db_lead: 'Moves subs.db and epub.db, as they are, into an existing folder you choose. Settings and logs stay where they are.',
+        lib_db_lead: 'Moves subs.db, epub.db and manga.db, as they are, into an existing folder you choose. Settings and logs stay where they are.',
         lib_db_move: 'Move', lib_db_default: 'Back to the default', lib_db_is_default: 'This is the default folder.',
         lib_db_moving: 'Moving... a move to another drive can take a few dozen seconds.',
         lib_db_none: 'not there yet', lib_db_moved: 'The databases were moved.',
         lib_db_old_kept: 'The databases were moved, but the old files were in use and could not be deleted. Delete them by hand if you no longer need them: {files}',
         lib_db_err_busy: 'The databases cannot be moved while indexing.', lib_db_err_same: 'The databases are already in this folder.',
-        lib_db_err_exists: 'That folder already holds a subs.db or epub.db. Nothing is overwritten.',
+        lib_db_err_exists: 'That folder already holds a subs.db, epub.db or manga.db. Nothing is overwritten.',
         lib_db_err_notwritable: 'That folder cannot be written to.',
         lib_db_err_failed: 'The move failed. The databases are still where they were.',
         lib_cache_title: 'Search cache', lib_cache: 'Saved: {n} {n|search|searches} · {size}',
         lib_cache_lead: 'When on, searches that take a second or more are saved beside the databases, so they show at once, even after a restart (up to 1 GB). Useful for a large library searched for the same words often; most libraries do not need it. Turning it off keeps what was saved; Clear search cache deletes it at any time.',
         lib_cache_on: 'On', lib_cache_off: 'Off',
         lib_cache_clear: 'Clear search cache', lib_cache_cleared: 'The search cache was cleared.',
-        lib_not_set: 'Not set. Choose a folder with "Change".',
+        lib_not_set: 'Not set. Choose a folder in the Settings tab.',
+        set_media_title: 'Media',
+        set_media_lead: 'Turn on the media you use. A media turned off is hidden from Search, Media and Library, and its index is kept.',
+        set_media_subs: 'Subtitles', set_media_books: 'Books', set_media_manga: 'Manga',
+        set_not_set: 'Not set. Choose a folder with "Change".',
+        set_drop: 'Delete database ({size})', set_dropped: 'The database was deleted.',
+        set_drop_kept: 'Some files were in use and remain. Restart Aobana, then delete again.',
+        set_drop_busy: "The index can't be deleted while indexing or checking the library.",
+        set_drop_confirm: 'This deletes the {media} database, {file} ({size}). Getting it back means indexing again.',
+        set_drop_yes: 'Delete',
+        off_title: 'All media are turned off', off_btn: 'Open Settings',
+        off_body: 'Every media is turned off. Turn one on in the Settings tab to search it.',
+        setup_open: 'Set up Aobana', setup_title: 'Setup',
+        setup_lead: 'Turn on what you use. Its folder is made at the location below; press "Browse" to change it.',
+        setup_browse: 'Browse', setup_back: 'Back', setup_pick_one: 'Turn on at least one.',
+        upgrade_title: 'Media and folders', upgrade_lead: 'From this version, manga (.mokuro) can be searched too. Turn on what you use and check its folder. You can change this later in the Settings tab.', upgrade_save: 'Save',
         lib_root_not_set: 'This stage was skipped because its folder is not set: {s}',
-        lib_scope_all: 'Subtitles and books', lib_scope_subs: 'Subtitles only', lib_scope_epub: 'Books only',
+        lib_scope_all: 'All media', lib_scope_subs: 'Subtitles only', lib_scope_epub: 'Books only', lib_scope_manga: 'Manga only',
         lib_skipped_clash: 'Not read, because two files would get the same name (one directly in the subtitles folder, one in the show folder named after it):',
         lib_estimating: 'Estimating time and size...',
+        lib_nothing: 'There are no files to index. Put files in the folders below, then press "Index library".',
         est_title: 'Indexing estimate',
         est_new: 'New files: {n}', est_db: '{name}: now {now} → about {after}',
         est_total: 'Databases in total: about {n}', est_time: 'Time: about {t} ({w} {w|process|processes})',
@@ -1218,6 +1286,7 @@
         an_why_lang: '{lines} {lines|line|lines}: Japanese {ja} · Chinese {zh} · English {en}',
         an_why_dup: '{pct}% the same as {keep}', an_why_bytes: 'the same file as {keep}', an_why_subplz: 'SubPlz set · {keep} kept',
         an_kept: 'the one kept from this group', an_summary: '{files} {files|file|files} checked · {when}',
+        an_invert: 'Invert selection',
         an_filter: "Don't index the ticked files",
         an_filtered_done: '{n} {n|file|files} will be left out of the index (the files stay where they are). They leave search at the next "Index library".',
         an_filter_failed: 'Files that could not be left out (the folder changed after the check):',
@@ -1272,13 +1341,23 @@
 
     const PARAMS = new URLSearchParams(window.location.search);
     const TAB = PARAMS.get('view') === 'saved' ? 'saved'
-              : ['search', 'saved', 'media', 'library', 'guide'].includes(PARAMS.get('tab')) ? PARAMS.get('tab') : 'search';
+              : ['search', 'saved', 'media', 'library', 'settings', 'guide'].includes(PARAMS.get('tab')) ? PARAMS.get('tab') : 'search';
     const SORTS = ['recommended', 'chrono', 'desc', 'asc', 'random'];
-    const MEDIAS = ['all', 'subs', 'epub'];
+    const MEDIA_BOOT = (() => {
+      try { return JSON.parse(document.getElementById('aobana-media').textContent); }
+      catch (e) { return { on: { subs: true, books: true }, setup: false }; }
+    })();
+    const MEDIA_ON = { subs: !!MEDIA_BOOT.on.subs, epub: !!MEDIA_BOOT.on.books, manga: !!MEDIA_BOOT.on.manga };
+    const MEDIAS_ALL = ['all', 'subs', 'epub', 'manga'];
+    const MEDIAS_ON = MEDIAS_ALL.slice(1).filter(m => MEDIA_ON[m]);
+    const MEDIAS = MEDIAS_ON.length > 1 ? ['all', ...MEDIAS_ON] : MEDIAS_ON.length ? MEDIAS_ON : ['all'];
+    function mediaLabel(m) {
+      return t(m === 'all' ? (MEDIAS_ON.length === 2 ? 'media_both' : 'media_all') : 'media_' + m);
+    }
     const SORT = SORTS.includes(PARAMS.get('sort')) ? PARAMS.get('sort')
                : (SORTS.includes(store.get('sort')) ? store.get('sort') : 'recommended');
     const MEDIA = MEDIAS.includes(PARAMS.get('media')) ? PARAMS.get('media')
-                : (MEDIAS.includes(store.get('media')) ? store.get('media') : 'all');
+                : (MEDIAS.includes(store.get('media')) ? store.get('media') : MEDIAS[0]);
     let currentFolders = PARAMS.getAll('folder').filter(Boolean);
     function searchParams() {
       const p = new URLSearchParams(window.location.search);
@@ -1544,6 +1623,19 @@
       }
     }
 
+    function showMediaOff() {
+      for (const id of ['empty-library', 'media-empty']) {
+        const panel = document.getElementById(id);
+        if (!panel) continue;
+        panel.querySelector('h2').dataset.i18n = 'off_title';
+        panel.querySelector('p').dataset.i18n = 'off_body';
+        const btn = panel.querySelector('a.btn');
+        btn.dataset.i18n = 'off_btn';
+        btn.href = '/?tab=settings';
+        panel.querySelectorAll('[data-i18n]').forEach(el => el.textContent = t(el.dataset.i18n));
+      }
+    }
+
     function showEmptyLibrary() {
       const empty = document.getElementById('empty-library');
       if (empty) empty.hidden = false;
@@ -1569,7 +1661,7 @@
     function renderSidebar(data, inPage) {
       sidebarData = data;
       const folders = data.all_folders || [];
-      if (inPage) {
+      if (inPage && sidebarShown) {
         if (sidebarSignature(data) === sidebarDrawn) { markSelected(); return; }
         const sidebar = document.querySelector('.sidebar');
         const top = sidebar ? sidebar.scrollTop : 0;
@@ -1854,7 +1946,7 @@
         html += `
         <div class="card" id="card-${rId}">
           <div class="card-meta">
-            <div class="src">${esc(r.title || r.folder)}</div>
+            <div class="src">${esc(r.title || r.folder)}${r.page ? ' · ' + esc(t('page_n', { n: fmt(r.page) })) : ''}</div>
             <div class="chars">${r.char_count !== undefined ? esc(t('chars', { n: r.char_count })) : ''}</div>
           </div>
           <div class="file-title">
@@ -1863,7 +1955,7 @@
               <button class="icon-btn ${isSaved ? 'star-active' : ''}" onclick="toggleSave('${rId}', this)" data-star="${starKey(savedItemData)}" aria-label="${esc(t('sc_save'))}">
                 <span>★</span>
               </button>
-              <button class="icon-btn" onclick="toggleContext(this)" aria-label="${esc(t('sc_context'))}" data-rowid="${r.rowid}" data-file="${encodeURIComponent(r.file)}" data-saved-context="${r.context ? encodeURIComponent(r.context) : ''}">
+              <button class="icon-btn" onclick="toggleContext(this)" aria-label="${esc(t('sc_context'))}" data-rowid="${r.rowid}" data-file="${encodeURIComponent(r.file)}" data-media="${esc(r.media_type || '')}" data-saved-context="${r.context ? encodeURIComponent(r.context) : ''}">
                 <span>⋯</span>
               </button>
             </div>
@@ -1899,7 +1991,8 @@
                const btnData = starRow(starBtn);
                if (btnData && btnData.original_q) q = btnData.original_q;
             } catch(e) {}
-            const res = await fetch(`/api/context?rowid=${rowid}&file=${fileEnc}&q=${encodeURIComponent(q)}`);
+            const media = btn.dataset.media ? `&media=${encodeURIComponent(btn.dataset.media)}` : '';
+            const res = await fetch(`/api/context?rowid=${rowid}&file=${fileEnc}&q=${encodeURIComponent(q)}${media}`);
             const data = await res.json();
             if (data.context) {
               ctx.innerHTML = data.context;
@@ -1972,9 +2065,18 @@
       renderBatches();
     }
 
-    const MEDIA_TAB_FILTER = MEDIAS.includes(store.get('mediaTabFilter')) ? store.get('mediaTabFilter') : 'all';
+    function mediaTabFilter() {
+      const m = store.get('mediaTabFilter');
+      return MEDIAS.includes(m) ? m : MEDIAS[0];
+    }
+    const MEDIA_TAB_FILTER = mediaTabFilter();
+    const mediaTabUnfiltered = () => MEDIAS.length === 1 || mediaTabFilter() === 'all';
 
     function statPills(it) {
+      if (it.media === 'manga') {
+        return `<span class="stat-pill secondary">${esc(t('stat_vols', { n: fmt(it.episodes) }))}</span>
+                <span class="stat-pill">${esc(t('stat_lines', { n: fmt(it.lines) }))}</span>`;
+      }
       if (it.media === 'epub') {
         return `<span class="stat-pill secondary">${esc(t('stat_chaps', { n: fmt(it.episodes) }))}</span>
                 <span class="stat-pill">${esc(t('stat_sents', { n: fmt(it.lines) }))}</span>`;
@@ -2153,7 +2255,7 @@
       mediaCtrl = new AbortController();
       const size = mediaPageSize();
       const needle = (document.getElementById('media-filter').value || '').trim();
-      const params = new URLSearchParams({ media: store.get('mediaTabFilter', 'all'), q: needle,
+      const params = new URLSearchParams({ media: mediaTabFilter(), q: needle,
         offset: String(mediaOffset), limit: size === 'all' ? '0' : size });
       const listEl = document.getElementById('media-list');
       const moreEl = document.getElementById('media-more');
@@ -2173,13 +2275,14 @@
       }
       if (gen !== mediaGen) return;
       mediaBusy = false;
-      if (!mediaOffset && !needle && !data.total && store.get('mediaTabFilter', 'all') === 'all') {
+      if (!mediaOffset && !needle && !data.total && mediaTabUnfiltered()) {
         document.getElementById('media-body').hidden = true;
         document.getElementById('media-empty').hidden = false;
         return;
       }
-      let summary = t('media_summary', { shows: fmt(data.shows), books: fmt(data.books) });
-      if (needle || store.get('mediaTabFilter', 'all') !== 'all') summary += ' · ' + t('media_matches', { n: fmt(data.total) });
+      const counts = { subs: data.shows, epub: data.books, manga: data.manga };
+      let summary = MEDIAS_ON.map(m => t('media_summary_' + m, { n: fmt(counts[m] || 0) })).join(' · ');
+      if (needle || !mediaTabUnfiltered()) summary += ' · ' + t('media_matches', { n: fmt(data.total) });
       document.getElementById('media-summary').textContent = summary;
       const html = data.items.map(mediaRowHtml).join('');
       if (!mediaOffset) {
@@ -2238,13 +2341,13 @@
       const head = document.getElementById('media-detail');
       head.hidden = false;
       head.after(document.getElementById('main-loading'), document.getElementById('results'));
-      const media = MEDIAS.includes(PARAMS.get('media')) ? PARAMS.get('media') : 'all';
+      const media = MEDIAS_ALL.includes(PARAMS.get('media')) ? PARAMS.get('media') : 'all';
       mediaDetailFolder = folder;
       mediaDetailMedia = media;
       mediaDetailContentActive = false;
       head.innerHTML = `<a class="back-link" href="/?tab=media">← ${esc(t('back_media'))}</a><h1>${esc(folder)}</h1><div id="media-detail-meta"></div>
         <div class="media-detail-search">
-          <input id="media-detail-filter" class="folder-filter" type="text" placeholder="${esc(t(media === 'epub' ? 'media_detail_filter_epub' : 'media_detail_filter_subs'))}" spellcheck="false" autocomplete="off" oninput="onMediaDetailTitleInput()" ${mediaDetailMode === 'title' ? '' : 'hidden'}>
+          <input id="media-detail-filter" class="folder-filter" type="text" placeholder="${esc(t('media_detail_filter_' + (media === 'all' ? 'subs' : media)))}" spellcheck="false" autocomplete="off" oninput="onMediaDetailTitleInput()" ${mediaDetailMode === 'title' ? '' : 'hidden'}>
           <form id="media-detail-form" class="media-detail-form" autocomplete="off" onsubmit="onMediaDetailContentSubmit(event)" ${mediaDetailMode === 'content' ? '' : 'hidden'}>
             <div class="search-input-wrap">
               <input id="media-detail-q" class="search-input" type="text" placeholder="${esc(t('placeholder'))}" value="" autocomplete="off" spellcheck="false" oninput="onMediaDetailContentInput(this)">
@@ -2291,7 +2394,7 @@
           if (it.media && mediaDetailMedia === 'all') {
             mediaDetailMedia = it.media;
             const fEl = document.getElementById('media-detail-filter');
-            if (fEl) fEl.placeholder = t(it.media === 'epub' ? 'media_detail_filter_epub' : 'media_detail_filter_subs');
+            if (fEl) fEl.placeholder = t('media_detail_filter_' + it.media);
           }
           document.getElementById('media-detail-meta').innerHTML =
             `${it.author ? `<div class="muted">${esc(it.author)}</div>` : ''}<div class="media-stats">${statPills(it)}</div>`;
@@ -2589,7 +2692,12 @@
 
     function renderBrowseLinesHTML(results, origQ = '') {
         let linesHtml = '';
+        let page = null;
         results.forEach(r => {
+            if (r.page && r.page !== page) {
+                page = r.page;
+                linesHtml += `<div class="page-mark">${esc(t('page_n', { n: fmt(page) }))}</div>`;
+            }
             const rId = lineId(r.line);
             const isSaved = savedSentences.some(s => s.id === rId);
             const savedItemData = {...r, id: rId, original_q: origQ};
@@ -2619,7 +2727,8 @@
         if (!libLast) return;
         Object.assign(libLast, f);
         for (const [which, disk, indexed, path] of [['subs', f.subs_disk, libLast.subs_indexed, libLast.subs_dir],
-                                                    ['books', f.books_disk, libLast.books_indexed, libLast.books_dir]]) {
+                                                    ['books', f.books_disk, libLast.books_indexed, libLast.books_dir],
+                                                    ['manga', f.manga_disk, libLast.manga_indexed, libLast.manga_dir]]) {
           const box = document.querySelector(`#lib-card-${which} .lib-facts`);
           if (box) box.innerHTML = folderFacts(which, path, disk, indexed, f.counting);
         }
@@ -2633,25 +2742,124 @@
       loadAnalysis();
     }
 
+    async function initSettingsTab() {
+      setTitle(t('tab_settings'));
+      await refreshSettings();
+    }
+
+    async function refreshSettings() {
+      let lib;
+      try { lib = await fetch('/api/library').then(r => r.json()); }
+      catch (e) { document.getElementById('lib-data').innerHTML = `<div class="error-text">${esc(t('load_failed'))}</div>`; return; }
+      folderPicker = !!lib.folder_picker;
+      renderMediaCard(lib);
+      renderDbCard(lib);
+      renderPortCard(lib);
+    }
+
+    const MEDIA_DB = { subs: 'subs.db', books: 'epub.db', manga: 'manga.db' };
+    const MEDIA_KINDS = ['subs', 'books', 'manga'];
+    function renderMediaCard(lib, msg) {
+      const on = lib.media || { subs: true, books: true, manga: false };
+      const rows = MEDIA_KINDS.map(which => {
+        const path = lib[which + '_dir'];
+        const size = (lib.db_sizes || {})[MEDIA_DB[which]];
+        const folder = !on[which] ? '' : `
+          ${path == null ? `<div class="facts"><div>${esc(t('set_not_set'))}</div></div>` : `<span class="path">${esc(path)}</span>`}
+          <div class="lib-edit" hidden>
+            <input type="text" value="${esc(path ?? '')}" placeholder="${esc(t('lib_change_hint'))}" spellcheck="false">
+            <div class="btns">
+              <button class="btn primary" onclick="saveFolder('${which}')">${esc(t('lib_save'))}</button>
+              <button class="btn" onclick="toggleFolderEdit('${which}', false)">${esc(t('lib_cancel'))}</button>
+            </div>
+            <div class="lib-msg facts" style="margin:0.5em 0 0;"></div>
+          </div>
+`;
+        const drop = size == null ? '' : `<button class="btn set-drop" onclick="askDrop('${which}')">${esc(t('set_drop', { size: fmtBytes(size) }))}</button>`;
+        const buttons = `<div class="btns lib-view-btns">
+            ${on[which] ? `<button class="btn" onclick="openFolder('${which}')" ${path == null ? 'disabled' : ''}>${esc(t('lib_open'))}</button>
+            <button class="btn" onclick="changeFolder('${which}')">${esc(t('lib_change'))}</button>` : ''}
+            ${drop}
+          </div>
+          <div class="set-drop-ask" hidden></div>`;
+        return `<div class="set-media-row" id="set-media-${which}">
+          <div class="btns set-media-head">
+            <strong>${esc(t('set_media_' + which))}</strong>
+            <div class="seg" style="width:12em;">
+              <button type="button" class="seg-btn ${on[which] ? '' : 'active'}" onclick="setMediaOn('${which}', false)">${esc(t('lib_cache_off'))}</button>
+              <button type="button" class="seg-btn ${on[which] ? 'active' : ''}" onclick="setMediaOn('${which}', true)">${esc(t('lib_cache_on'))}</button>
+            </div>
+          </div>
+          ${folder}
+          ${buttons}
+          <div class="lib-pick-msg facts" style="margin:0.5em 0 0;"></div>
+        </div>`;
+      }).join('');
+      document.getElementById('set-media').innerHTML = `
+        <h3>${esc(t('set_media_title'))}</h3>
+        <div class="facts"><div>${esc(t('set_media_lead'))}</div></div>
+        ${rows}
+        <div class="lib-msg facts set-media-msg" style="margin:0.5em 0 0;">${msg || ''}</div>`;
+    }
+
+    async function setMediaOn(which, on) {
+      const res = await apiPost('/api/library', { media: { [which]: on } }).catch(() => ({ error: 'network' }));
+      await refreshSettings();
+      if (res.error) document.querySelector('#set-media .set-media-msg').innerHTML =
+        `<span class="warn">${esc(res.error === 'busy' ? t('lib_err_busy') : t('lib_err_notfound'))}</span>`;
+    }
+
+    function askDrop(which) {
+      const row = document.getElementById(`set-media-${which}`);
+      const size = row.querySelector('.set-drop').textContent.match(/[（(](.*)[）)]/);
+      const ask = row.querySelector('.set-drop-ask');
+      row.querySelector('.lib-view-btns').hidden = true;
+      ask.hidden = false;
+      ask.innerHTML = `<div class="notice">${esc(t('set_drop_confirm', { media: t('set_media_' + which), file: MEDIA_DB[which], size: size ? size[1] : '' }))}</div>
+        <div class="btns">
+          <button class="btn primary" onclick="dropIndex('${which}')">${esc(t('set_drop_yes'))}</button>
+          <button class="btn" onclick="cancelDrop('${which}')">${esc(t('lib_cancel'))}</button>
+        </div>`;
+    }
+    function cancelDrop(which) {
+      const row = document.getElementById(`set-media-${which}`);
+      row.querySelector('.set-drop-ask').hidden = true;
+      row.querySelector('.lib-view-btns').hidden = false;
+    }
+
+    async function dropIndex(which) {
+      document.querySelectorAll('#set-media button').forEach(b => b.disabled = true);
+      const res = await apiPost('/api/library/drop', { which }).catch(() => ({ error: 'network' }));
+      let msg = esc(t('set_dropped'));
+      if (res.error) msg = `<span class="warn">${esc(res.error === 'busy' ? t('set_drop_busy') : t('load_failed'))}</span>`;
+      else if ((res.kept || []).length) msg = `<span class="warn">${esc(t('set_drop_kept'))}</span>`;
+      let lib;
+      try { lib = await fetch('/api/library').then(r => r.json()); } catch (e) { return; }
+      renderMediaCard(lib, msg);
+      renderDbCard(lib);
+    }
+
     async function refreshLibrary() {
       let lib;
       try { lib = await fetch('/api/library').then(r => r.json()); }
       catch (e) { document.getElementById('lib-folders').innerHTML = `<div class="error-text">${esc(t('load_failed'))}</div>`; return; }
       document.getElementById('lib-folders').innerHTML =
-        folderCard('subs', t('lib_subs'), lib.subs_dir, lib.subs_disk, lib.subs_indexed, lib.counting) +
-        folderCard('books', t('lib_books'), lib.books_dir, lib.books_disk, lib.books_indexed, lib.counting);
+        (MEDIA_ON.subs ? folderCard('subs', t('lib_subs'), lib.subs_dir, lib.subs_disk, lib.subs_indexed, lib.counting) : '') +
+        (MEDIA_ON.epub ? folderCard('books', t('lib_books'), lib.books_dir, lib.books_disk, lib.books_indexed, lib.counting) : '') +
+        (MEDIA_ON.manga ? folderCard('manga', t('lib_manga'), lib.manga_dir, lib.manga_disk, lib.manga_indexed, lib.counting) : '');
+      const scope = document.getElementById('lib-scope');
+      scope.hidden = MEDIAS_ON.length < 2;
+      scope.querySelectorAll('option[value]').forEach(o => { if (o.value) o.hidden = !MEDIA_ON[o.value]; });
+      if (scope.hidden || (scope.value && !MEDIA_ON[scope.value])) scope.value = '';
       libLast = lib;
       if (lib.counting) pollFigures();
       folderPicker = !!lib.folder_picker;
       renderOutdated(lib);
-      renderDbCard(lib);
-      renderPortCard(lib);
       renderIndexStatus(lib.index);
       if (lib.index && lib.index.running) startPolling();
     }
 
     function folderFacts(which, path, disk, indexed, counting) {
-      const isSubs = which === 'subs';
       let facts = '';
       if (path == null) {
         facts = `<div>${esc(t('lib_not_set'))}</div>`;
@@ -2659,11 +2867,11 @@
         facts = counting ? `<div>${esc(t('lib_counting'))}</div>` : `<div class="warn">${esc(t('lib_missing'))}</div>`;
       } else {
         const more = disk.counting ? ' ' + esc(t('lib_counting')) : '';
-        facts += `<div>${esc(t(isSubs ? 'lib_disk_subs' : 'lib_disk_books', { n: fmt(disk.files) }))}${more}</div>`;
+        facts += `<div>${esc(t('lib_disk_' + which, { n: fmt(disk.files) }))}${more}</div>`;
         if (disk.other) facts += `<div>${esc(t('lib_other', { n: fmt(disk.other) }))}</div>`;
         if (disk.filtered) facts += `<div>${esc(t('lib_filtered', { n: fmt(disk.filtered) }))}</div>`;
       }
-      facts += `<div>${esc(t(isSubs ? 'lib_indexed_subs' : 'lib_indexed_books', { files: fmt(indexed.files), rows: fmt(indexed.rows) }))}</div>`;
+      facts += `<div>${esc(t('lib_indexed_' + which, { files: fmt(indexed.files), rows: fmt(indexed.rows) }))}</div>`;
       return facts;
     }
 
@@ -2672,32 +2880,34 @@
         <h3>${esc(title)}</h3>
         ${path == null ? '' : `<span class="path">${esc(path)}</span>`}
         <div class="facts lib-facts">${folderFacts(which, path, disk, indexed, counting)}</div>
-        <div class="lib-edit" hidden>
-          <input type="text" value="${esc(path ?? '')}" placeholder="${esc(t('lib_change_hint'))}" spellcheck="false">
-          <div class="btns">
-            <button class="btn primary" onclick="saveFolder('${which}')">${esc(t('lib_save'))}</button>
-            <button class="btn" onclick="toggleFolderEdit('${which}', false)">${esc(t('lib_cancel'))}</button>
-          </div>
-          <div class="lib-msg facts" style="margin:0.5em 0 0;"></div>
-        </div>
         <div class="btns lib-view-btns">
           <button class="btn" onclick="openFolder('${which}')" ${disk ? '' : 'disabled'}>${esc(t('lib_open'))}</button>
-          <button class="btn" onclick="changeFolder('${which}')">${esc(t('lib_change'))}</button>
         </div>
-        <div class="lib-pick-msg facts" style="margin:0.5em 0 0;"></div>
       </div>`;
     }
 
     function renderOutdated(lib) {
       const box = document.getElementById('lib-outdated');
-      const subs = lib.subs_outdated || 0, books = lib.books_outdated || 0;
-      box.hidden = !(subs + books) || (lib.index && lib.index.running);
+      const subs = MEDIA_ON.subs ? lib.subs_outdated || 0 : 0, books = MEDIA_ON.epub ? lib.books_outdated || 0 : 0;
+      const tables = [['subs', lib.subs_tables, subs], ['epub', lib.books_tables, books], ['manga', lib.manga_tables, 0]]
+        .filter(([k, missing, old]) => MEDIA_ON[k] && (missing || []).length && !old).map(([k]) => k);
+      box.hidden = !(subs + books + tables.length) || (lib.index && lib.index.running);
       if (box.hidden) return;
-      const only = subs && books ? '' : (subs ? 'subs' : 'epub');
-      box.innerHTML = `<div>${esc(t('lib_outdated', { subs: fmt(subs), books: fmt(books) }))}</div>
-        <div class="btns" style="display:flex; gap:0.5em; margin-top:0.6em;">
-          <button class="btn primary" onclick="startIndex('${only}', true)">${esc(t('lib_outdated_run'))}</button>
-        </div>`;
+      const btns = (call, label) => `<div class="btns" style="display:flex; gap:0.5em; margin-top:0.6em;">
+          <button class="btn primary" onclick="${call}">${esc(t(label))}</button></div>`;
+      let html = '';
+      if (subs + books) {
+        const only = subs && books ? '' : (subs ? 'subs' : 'epub');
+        html += `<div>${esc(t('lib_outdated', { subs: fmt(subs), books: fmt(books) }))}</div>`
+          + btns(`startIndex('${only}', true)`, 'lib_outdated_run');
+      }
+      if (tables.length) {
+        const only = tables.length === 1 ? tables[0] : '';
+        html += `<div${subs + books ? ' style="margin-top:1em;"' : ''}>${esc(t('lib_tables',
+          { which: tables.map(k => t('lib_stage_' + k)).join(' · ') }))}</div>`
+          + btns(`startIndex('${only}', false, true)`, 'lib_tables_run');
+      }
+      box.innerHTML = html;
     }
 
     let folderPicker = false;
@@ -2714,8 +2924,8 @@
     }
     async function changeFolder(which) {
       if (!folderPicker) return toggleFolderEdit(which, true);
-      const card = document.getElementById(`lib-card-${which}`);
-      const res = await pickFolder(card, which, t(which === 'subs' ? 'lib_subs' : 'lib_books'));
+      const card = document.getElementById(`set-media-${which}`);
+      const res = await pickFolder(card, which, t('lib_' + which));
       if (res.status === 'unavailable') return toggleFolderEdit(which, true);
       if (res.status !== 'ok') return;
       card.querySelector('.lib-edit input').value = res.path;
@@ -2732,25 +2942,24 @@
     }
 
     function toggleFolderEdit(which, on) {
-      const card = document.getElementById(`lib-card-${which}`);
+      const card = document.getElementById(`set-media-${which}`);
       card.querySelector('.lib-edit').hidden = !on;
       card.querySelector('.lib-view-btns').hidden = on;
       if (on) card.querySelector('.lib-edit input').focus();
     }
 
     async function saveFolder(which) {
-      const card = document.getElementById(`lib-card-${which}`);
+      const card = document.getElementById(`set-media-${which}`);
       const value = card.querySelector('.lib-edit input').value;
       const msg = card.querySelector('.lib-msg');
-      const body = which === 'subs' ? { subs_dir: value } : { books_dir: value };
+      const body = { [which + '_dir']: value };
       const res = await apiPost('/api/library', body).catch(() => ({ error: 'network' }));
       if (res.error) {
-        msg.innerHTML = `<span class="warn">${esc(res.error === 'busy' ? t('lib_err_busy') : t('lib_err_notfound'))}</span>`;
+        msg.innerHTML = `<span class="warn">${esc(res.error === 'busy' ? t('lib_err_busy') : String(res.error).startsWith('not_full') ? t('lib_err_notfull', { path: (card.querySelector('.path') || {}).textContent || (MEDIA_BOOT.defaults || {})[which] || '' }) : t('lib_err_notfound'))}</span>`;
         return false;
       }
-      await refreshLibrary();
-      const note = document.getElementById('lib-note');
-      note.textContent = t('lib_saved'); note.hidden = false;
+      await refreshSettings();
+      document.querySelector('#set-media .set-media-msg').textContent = t('lib_saved');
       return true;
     }
 
@@ -2761,7 +2970,7 @@
 
     function renderDbCard(lib) {
       const sizes = lib.db_sizes || {};
-      const facts = ['subs.db', 'epub.db'].map(n => `<div>${esc(n)}: ${esc(fmtBytes(sizes[n]))}</div>`).join('');
+      const facts = ['subs.db', 'epub.db', 'manga.db'].map(n => `<div>${esc(n)}: ${esc(fmtBytes(sizes[n]))}</div>`).join('');
       document.getElementById('lib-data').innerHTML = `
         <h3>${esc(t('lib_data'))}</h3>
         <span class="path">${esc(lib.data_dir)}</span>
@@ -2793,7 +3002,7 @@
             <button type="button" class="seg-btn ${c.on ? '' : 'active'}" onclick="setSearchCache(false)">${esc(t('lib_cache_off'))}</button>
             <button type="button" class="seg-btn ${c.on ? 'active' : ''}" onclick="setSearchCache(true)">${esc(t('lib_cache_on'))}</button>
           </div>
-          <button class="btn" onclick="clearSearchCache()">${esc(t('lib_cache_clear'))}</button>
+          <button class="btn" onclick="clearSearchCache()" ${c.entries || c.bytes ? '' : 'disabled'}>${esc(t('lib_cache_clear'))}</button>
         </div>
         <div class="lib-msg facts" style="margin:0.5em 0 0;">${msg ? esc(msg) : ''}</div>`;
     }
@@ -2830,7 +3039,7 @@
         msg.innerHTML = `<span class="warn">${esc(t(key))}</span>`;
         return;
       }
-      await refreshLibrary();
+      await refreshSettings();
       const done = document.getElementById('lib-data').querySelector('.lib-msg');
       done.innerHTML = res.old_kept && res.old_kept.length
         ? `<span class="warn">${esc(t('lib_db_old_kept', { files: res.old_kept.join(', ') }))}</span>`
@@ -2912,7 +3121,7 @@
       if (res.error) { note.textContent = t('port_bad'); note.className = 'notice warn'; note.hidden = false; return; }
       handoffPending = Number(value) !== Number(location.port || 80);
       note.className = 'notice';
-      await refreshLibrary();
+      await refreshSettings();
     }
 
     function openReset() {
@@ -2927,6 +3136,7 @@
       if (!reset) return;
       await apiPost('/api/profile-handoff', { drop: true }).catch(() => null);
       try { localStorage.clear(); } catch (e) {}
+      store.set('setup_again', '1');
       window.location.href = '/';
     }
 
@@ -2938,8 +3148,9 @@
     function openFolder(which) { apiPost('/api/library/open', { which }).catch(() => {}); }
 
     async function runIndex() {
-      if (store.get('check_asked') !== '1') {
-        store.set('check_asked', '1');
+      if (!MEDIA_BOOT.check_asked) {
+        MEDIA_BOOT.check_asked = true;
+        apiPost('/api/library/check-asked', {}).catch(() => {});
         let d = null;
         try { d = await fetch('/api/library/analysis').then(r => r.json()); } catch (e) {}
         if (d && !d.report && !(d.status && d.status.running)) {
@@ -2949,7 +3160,7 @@
         }
       }
       document.getElementById('lib-note').hidden = true;
-      const only = document.getElementById('lib-scope').value;
+      const only = libScope();
       const box = document.getElementById('lib-estimate');
       const btn = document.getElementById('lib-run');
       btn.disabled = true;
@@ -2957,7 +3168,7 @@
       const est = await fetch('/api/library/estimate' + (only ? `?only=${only}` : '')).then(r => r.json()).catch(() => null);
       btn.disabled = false;
       const media = (est && est.media) || {};
-      const newFiles = Object.values(media).reduce((a, m) => a + (m.new_files || 0), 0);
+      const newFiles = Object.entries(media).reduce((a, [k, m]) => a + (MEDIA_ON[k] ? m.new_files || 0 : 0), 0);
       if (!est || est.error || !newFiles) { box.innerHTML = ''; return startIndex(only); }
       box.innerHTML = renderEstimate(est, only);
     }
@@ -2994,12 +3205,19 @@
       return m < 60 ? t('est_min', { n: m }) : t('est_hour', { h: Math.floor(m / 60), m: m % 60 });
     }
 
+    function libScope() {
+      const scope = document.getElementById('lib-scope');
+      if (!scope.hidden) return scope.value;
+      return MEDIAS_ON.length === 1 ? MEDIAS_ON[0] : '';
+    }
+
     function renderEstimate(est, only) {
       let rows = '';
       let short = null;
       for (const k of ['subs', 'epub']) {
         const m = est.media[k];
-        if (!m || (only && k !== only)) continue;
+        if (!m || !MEDIA_ON[k] || (only && k !== only)) continue;
+        if (!m.new_files && !m.db_now) continue;
         const name = k === 'subs' ? 'subs.db' : 'epub.db';
         rows += `<div>${esc(t('lib_stage_' + k))}</div><div class="num">${esc(t('est_new', { n: fmt(m.new_files) }))}</div>`;
         rows += `<div></div><div class="num">${esc(t('est_db', { name, now: fmtBytes(m.db_now), after: fmtBytes(m.db_now + m.db_add) }))}</div>`;
@@ -3020,12 +3238,18 @@
         </div></div>`;
     }
 
-    async function startIndex(only, outdated) {
+    async function startIndex(only, outdated, tables) {
       document.getElementById('lib-estimate').innerHTML = '';
       document.getElementById('lib-outdated').hidden = true;
       const body = only ? { only } : {};
       if (outdated) body.outdated = true;
+      if (tables) body.tables = true;
       const res = await apiPost('/api/index', body).catch(() => null);
+      if (res && res.nothing) {
+        const note = document.getElementById('lib-note');
+        note.textContent = t('lib_nothing'); note.className = 'notice warn'; note.hidden = false;
+        return;
+      }
       if (res) renderIndexStatus(res);
       startPolling();
       pollActivity();
@@ -3035,7 +3259,7 @@
     const AN_ORDER = ['bilingual', 'other_language', 'duplicate', 'encoding', 'unreadable'];
 
     async function runAnalysis() {
-      const only = document.getElementById('lib-scope').value;
+      const only = libScope();
       const res = await apiPost('/api/library/analyse', only ? { only } : {}).catch(() => null);
       if (res) renderAnalysisStatus(res);
       pollAnalysis();
@@ -3105,7 +3329,7 @@
       return `<details class="an-section">
           <summary>${esc(t('an_filtered_title'))} (${fmt(list.length)})</summary>
           <div class="an-list">${rows}</div></details>
-        <div class="btns"><button class="btn" onclick="unfilterPicked()">${esc(t('an_unfilter'))}</button></div>`;
+        <div class="btns an-after"><button class="btn" onclick="unfilterPicked()">${esc(t('an_unfilter'))}</button></div>`;
     }
 
     let anFiltered = [];
@@ -3135,9 +3359,12 @@
           } else {
             rows = list.map(anRow).join('');
           }
+          const bar = reason === 'duplicate'
+            ? `<div class="btns" style="margin:0.3em 0 0.5em;"><button type="button" class="btn" onclick="invertDuplicates(this)">${esc(t('an_invert'))}</button></div>`
+            : '';
           html += `<details class="an-section">
             <summary>${esc(t('an_stage_' + media))} · ${esc(t('an_reason_' + reason))} (${fmt(list.length)})</summary>
-            <div class="an-list">${rows}</div></details>`;
+            ${bar}<div class="an-list">${rows}</div></details>`;
         }
       }
       const head = `<div class="facts" style="margin-top:0.8em;">${esc(t('an_summary', { files: fmt(files), when: r.generated_at }))}</div>`;
@@ -3146,6 +3373,12 @@
             <button class="btn primary" onclick="filterFlagged()">${esc(t('an_filter'))}</button></div>`
         : `<div class="notice ok">${esc(t('an_none'))}</div>`;
       box.innerHTML = head + found + filtered + '<div id="an-move-msg"></div>';
+    }
+
+    function invertDuplicates(btn) {
+      const sec = btn.closest('.an-section');
+      if (!sec) return;
+      sec.querySelectorAll('.an-pick:not(:disabled)').forEach(cb => { cb.checked = !cb.checked; });
     }
 
     function anMessage(html) {
@@ -3212,7 +3445,9 @@ function startPolling() {
       if (s.running) {
         const pct = s.total ? Math.round(100 * s.done / s.total) : 0;
         html += `<div class="progress"><div style="width:${pct}%"></div></div>
-          <div class="progress-text">${esc(t('lib_stage_' + s.stage))} — ${fmt(s.done)} / ${fmt(s.total)} ${s.current ? '· ' + esc(s.current) : ''}</div>
+          <div class="progress-text">${esc(t('lib_stage_' + s.stage))} — ${s.phase
+            ? esc(t('lib_phase_' + s.phase)) + (s.total ? ` ${fmt(s.done)} / ${fmt(s.total)}` : '')
+            : `${fmt(s.done)} / ${fmt(s.total)} ${s.current ? '· ' + esc(s.current) : ''}`}</div>
           <div class="btns"><button class="btn" onclick="askStop('index', ${s.outdated ? 'true' : 'false'})" ${s.stopping ? 'disabled' : ''}>${esc(t(s.stopping ? 'stopping' : 'stop_btn'))}</button></div>`;
       } else {
         const results = s.results || {};
@@ -3254,10 +3489,10 @@ function startPolling() {
         <p class="lead">露草（あおばな）の使い方。</p>
 
         <h2>露草とは</h2>
-        <p>自分の持っている字幕ファイルと電子書籍から、日本語の例文を検索するアプリです。すべてこのパソコンの中で動き、インターネットには何も送りません（起動時に、新しいバージョンがあるかを GitHub に確認するだけです）。検索は語の活用形や読みにも対応していて、例文はふりがな付きで表示されます。</p>
+        <p>自分の持っている字幕ファイル・電子書籍・漫画から、日本語の例文を検索するアプリです。すべてこのパソコンの中で動き、インターネットには何も送りません（起動時に、新しいバージョンがあるかを GitHub に確認するだけです）。検索は語の活用形や読みにも対応していて、例文はふりがな付きで表示されます。</p>
 
         <h2>1. ファイルを入れる</h2>
-        <p>読み込まれるのは <code>.srt</code>・<code>.ass</code>・<code>.ssa</code>（字幕）と <code>.epub</code>（電子書籍）だけです。<code>.pdf</code>、<code>.txt</code> などは無視されます。<code>.ass</code> は日本語の台詞だけを読み込みます（中国語・英語の行、看板、ルビ用の小さな行、図形は除きます）。フォルダの場所は<a href="/?tab=library">ライブラリ</a>タブで確認・変更できます。</p>
+        <p>読み込まれるのは <code>.srt</code>・<code>.ass</code>・<code>.ssa</code>（字幕）、<code>.epub</code>（電子書籍）、<code>.mokuro</code>（漫画）だけです。<code>.pdf</code>、<code>.txt</code> などは無視されます。<code>.ass</code> は日本語の台詞だけを読み込みます（中国語・英語の行、看板、ルビ用の小さな行、図形は除きます）。フォルダの場所は<a href="/?tab=settings">設定</a>タブで確認・変更できます。使わないメディアはそこでオフにできます。</p>
         <pre>字幕フォルダ/
 ├─ 作品A/
 │   ├─ 作品A S01E01.srt
@@ -3269,16 +3504,22 @@ function startPolling() {
 書籍フォルダ/
 ├─ [著者] 書名.epub
 └─ 好きなサブフォルダ/
-    └─ [著者] 書名.epub</pre>
+    └─ [著者] 書名.epub
+
+漫画フォルダ/
+└─ シリーズA/
+    ├─ シリーズA 01.mokuro
+    └─ シリーズA 02.mokuro</pre>
         <ul>
           <li><b>字幕は作品ごとにフォルダを作ってください。</b>一番上のフォルダ名が作品名になります。字幕フォルダの直下に置いた字幕ファイルは、ファイル名を作品名とする1つの作品として読み込まれます。</li>
           <li>話数はファイル名の <code>S01E02</code>、<code>第2話</code>、<code>- 02</code> などから読み取ります。</li>
           <li>書籍の題名と著者は EPUB のメタデータから取ります。メタデータがない場合は、ファイル名 <code>[著者] 書名.epub</code> から取ります。</li>
+          <li><b>漫画はシリーズごとにフォルダを作ってください。</b>フォルダ名がシリーズ名、ファイル名が巻の名前になります。<code>.mokuro</code> は <a href="https://github.com/kha-white/mokuro" target="_blank" rel="noopener">mokuro</a> が漫画の画像を OCR して書き出すファイルです。Aobana はその文字だけを読むので、画像はなくても構いません。文字は mokuro が読み取ったままなので、読み間違いや読み落としはそのまま表示されます。</li>
         </ul>
 
         <h2>2. インデックスを作成する</h2>
         <p><a href="/?tab=library">ライブラリ</a>タブで「インデックス作成」を押すと、すべての文を解析して検索用のデータベースを作ります。初回は大きなライブラリで数分かかります。2回目以降は追加・変更・削除されたファイルだけを処理します。ファイルを入れ替えたら、もう一度押してください。</p>
-        <p>ボタンの横で、字幕だけ・書籍だけを選べます。ファイルが増えるときは、作成前にデータベースの大きさと所要時間の見積もりが出ます。2つのデータベースの合計が 10 GB を超えそうなときは、検索が遅くなるため、始める前に確認が表示されます。同じタブの「点検する」では、日本語以外のファイルや重複ファイルを探し、選んだものをインデックスから外せます（ファイルは移動も削除もしません）。二か国語の字幕は日本語の部分だけがインデックスされます。</p>
+        <p>ボタンの横で、1つのメディアだけを選べます。ファイルが増えるときは、作成前にデータベースの大きさと所要時間の見積もりが出ます。データベースの合計が 10 GB を超えそうなときは、検索が遅くなるため、始める前に確認が表示されます。同じタブの「点検する」では、字幕と書籍から日本語以外のファイルや重複ファイルを探し、選んだものをインデックスから外せます（ファイルは移動も削除もしません）。二か国語の字幕は日本語の部分だけがインデックスされます。</p>
 
         <h2>3. 検索する</h2>
         <ul>
@@ -3286,7 +3527,7 @@ function startPolling() {
           <li><b>完全一致</b> — 入力した形そのままで探します。<code>"食べて"</code> のように <code>"</code> で囲んでも同じです。</li>
           <li><b>除外</b> — 頭に <code>-</code> を付けた語を含む文は除かれます（例: <code>食べる -肉</code>）。</li>
           <li><b>並べ替え</b> — おすすめ（読みやすい長さ順）、時系列順、長い順、短い順、ランダム。選んだ並べ替えは次回も使われます。</li>
-          <li><b>両方 / 字幕 / 書籍</b> — サイドバーの上のボタンで、検索対象を切り替えます。これも記憶されます。</li>
+          <li><b>全て / 字幕 / 書籍 / 漫画</b> — サイドバーの上のボタンで、検索対象を切り替えます。これも記憶されます。オンのメディアが2つのときは「両方」と表示されます。</li>
           <li><b>作品で絞り込む</b> — サイドバーの作品名を押すと、その作品の中だけを検索します。いくつでも選べ、もう一度押すと外れます。</li>
         </ul>
 
@@ -3298,7 +3539,7 @@ function startPolling() {
         </ul>
 
         <h2>メディア</h2>
-        <p><a href="/?tab=media">メディア</a>タブには、インデックス済みのすべての作品と書籍が一覧で表示されます。作品を開くと、各話・各章を最初から順に読めます。</p>
+        <p><a href="/?tab=media">メディア</a>タブには、インデックス済みのすべての作品・書籍・漫画が一覧で表示されます。作品を開くと、各話・各章・各巻を最初から順に読めます。漫画の文にはページ番号が付きます。</p>
 
         <h2>ショートカット</h2>
         <p><span class="kbd-key">Q</span> 検索バー · <span class="kbd-key">D</span>/<span class="kbd-key">↓</span> 次へ · <span class="kbd-key">A</span>/<span class="kbd-key">↑</span> 前へ · <span class="kbd-key">C</span> 文脈 · <span class="kbd-key">S</span> お気に入り · <span class="kbd-key">F</span> ふりがな · <span class="kbd-key">?</span> ヘルプ · <span class="kbd-key">Esc</span> 閉じる</p>
@@ -3314,10 +3555,10 @@ function startPolling() {
         <p class="lead">How to use Aobana (露草).</p>
 
         <h2>What Aobana is</h2>
-        <p>An app for searching Japanese example sentences in the subtitle files and e-books you own. Everything runs on this computer, and nothing is sent to the internet (at start it only asks GitHub whether a newer version exists). Searches understand conjugations and readings, and sentences are shown with furigana.</p>
+        <p>An app for searching Japanese example sentences in the subtitle files, e-books and manga you own. Everything runs on this computer, and nothing is sent to the internet (at start it only asks GitHub whether a newer version exists). Searches understand conjugations and readings, and sentences are shown with furigana.</p>
 
         <h2>1. Add your files</h2>
-        <p>Only <code>.srt</code>, <code>.ass</code> and <code>.ssa</code> (subtitles) and <code>.epub</code> (e-books) are read. <code>.pdf</code>, <code>.txt</code> and everything else are ignored. From an <code>.ass</code>, only the Japanese dialogue is read: Chinese and English lines, signs, the small furigana lines and drawings are left out. The <a href="/?tab=library">Library</a> tab shows where the folders are, and lets you change them.</p>
+        <p>Only <code>.srt</code>, <code>.ass</code> and <code>.ssa</code> (subtitles), <code>.epub</code> (e-books) and <code>.mokuro</code> (manga) are read. <code>.pdf</code>, <code>.txt</code> and everything else are ignored. From an <code>.ass</code>, only the Japanese dialogue is read: Chinese and English lines, signs, the small furigana lines and drawings are left out. The <a href="/?tab=settings">Settings</a> tab shows where the folders are and lets you change them, or turn off a media you don't use.</p>
         <pre>Subtitles folder/
 ├─ Show A/
 │   ├─ Show A S01E01.srt
@@ -3329,16 +3570,22 @@ function startPolling() {
 Books folder/
 ├─ [Author] Title.epub
 └─ any sub-folder/
-    └─ [Author] Title.epub</pre>
+    └─ [Author] Title.epub
+
+Manga folder/
+└─ Series A/
+    ├─ Series A 01.mokuro
+    └─ Series A 02.mokuro</pre>
         <ul>
           <li><b>Give each show its own folder.</b> The top folder's name becomes the show's name. A subtitle file placed directly in the subtitles folder is read as a show of its own, named after the file.</li>
           <li>Episode numbers are read from file names such as <code>S01E02</code>, <code>第2話</code> or <code>- 02</code>.</li>
           <li>A book's title and author come from the EPUB's metadata, or, when that is missing, from the file name <code>[Author] Title.epub</code>.</li>
+          <li><b>Give each manga series its own folder.</b> The folder's name becomes the series' name, and each file's name its volume's. A <code>.mokuro</code> file is what <a href="https://github.com/kha-white/mokuro" target="_blank" rel="noopener">mokuro</a> writes when it runs OCR on manga pages. Aobana reads only its text, so the images are not needed. The text is shown as mokuro read it, misread or missed words included.</li>
         </ul>
 
         <h2>2. Build the index</h2>
         <p>Press "Index library" in the <a href="/?tab=library">Library</a> tab. Every sentence is analyzed into a search database; the first run over a large library takes a few minutes. Later runs only process files that were added, changed or removed, so run it again whenever your files change.</p>
-        <p>Beside the button you can choose subtitles only or books only. When files were added, you first see how large the databases will get and how long it will take; past 10 GB in total, Aobana asks before it starts, as searches get slower. "Check" in the same tab finds files that are not Japanese and duplicates, and leaves the ones you tick out of the index (nothing is moved or deleted). Bilingual subtitles are indexed with their Japanese part only.</p>
+        <p>Beside the button you can choose one media only. When files were added, you first see how large the databases will get and how long it will take; past 10 GB in total, Aobana asks before it starts, as searches get slower. "Check" in the same tab finds subtitles and books that are not Japanese, and duplicates, and leaves the ones you tick out of the index (nothing is moved or deleted). Bilingual subtitles are indexed with their Japanese part only.</p>
 
         <h2>3. Search</h2>
         <ul>
@@ -3346,7 +3593,7 @@ Books folder/
           <li><b>Exact</b> matches exactly what you typed. Wrapping the query in quotes (<code>"食べて"</code>) does the same.</li>
           <li><b>Exclude</b> sentences containing a word by putting <code>-</code> in front of it (<code>食べる -肉</code>).</li>
           <li><b>Sort</b>: recommended (easy-to-read lengths first), chronological, longest, shortest, random. Your choice is remembered.</li>
-          <li><b>All / Subs / Books</b>: the buttons at the top of the sidebar choose what to search. Also remembered.</li>
+          <li><b>All / Subs / Books / Manga</b>: the buttons at the top of the sidebar choose what to search. Also remembered.</li>
           <li><b>Filter by title</b>: click a title in the sidebar to search inside it only. You can pick several; click one again to remove it.</li>
         </ul>
 
@@ -3358,7 +3605,7 @@ Books folder/
         </ul>
 
         <h2>Media</h2>
-        <p>The <a href="/?tab=media">Media</a> tab lists every indexed show and book. Open one to read its episodes or chapters in order.</p>
+        <p>The <a href="/?tab=media">Media</a> tab lists every indexed show, book and manga series. Open one to read its episodes, chapters or volumes in order; manga lines carry their page number.</p>
 
         <h2>Keyboard shortcuts</h2>
         <p><span class="kbd-key">Q</span> search bar · <span class="kbd-key">D</span>/<span class="kbd-key">↓</span> next · <span class="kbd-key">A</span>/<span class="kbd-key">↑</span> previous · <span class="kbd-key">C</span> context · <span class="kbd-key">S</span> favorite · <span class="kbd-key">F</span> furigana · <span class="kbd-key">?</span> help · <span class="kbd-key">Esc</span> close</p>
@@ -3406,13 +3653,123 @@ Books folder/
 
     function openWelcome() {
       const m = document.getElementById('welcome-modal');
+      document.getElementById('welcome-btns').hidden = setupMode();
+      document.getElementById('welcome-setup-btns').hidden = !setupMode();
+      document.getElementById('welcome-s0').hidden = !setupMode();
+      const s1 = document.getElementById('welcome-s1');
+      s1.dataset.i18nHtml = setupMode() ? 'welcome_s1_setup' : 'welcome_s1';
+      s1.innerHTML = t(s1.dataset.i18nHtml);
       m.classList.add('open');
       document.documentElement.style.overflow = 'hidden';
     }
+
+    function setupMode() { return MEDIA_BOOT.setup || store.get('setup_again') === '1'; }
+    const setupState = MEDIA_BOOT.setup ? { subs: true, books: true, manga: false } : { ...MEDIA_BOOT.on };
+    function openSetupStep() {
+      const card = document.getElementById('welcome-card');
+      card.style.minHeight = card.offsetHeight + 'px';
+      document.getElementById('welcome-pane').hidden = true;
+      document.getElementById('setup-step').hidden = false;
+      renderSetupRows();
+    }
+    let upgradeOpen = false;
+    function openUpgradeSetup() {
+      upgradeOpen = true;
+      document.getElementById('welcome-pane').hidden = true;
+      document.getElementById('setup-step').hidden = false;
+      for (const [id, key] of [['setup-title', 'upgrade_title'], ['setup-lead', 'upgrade_lead']]) {
+        const el = document.getElementById(id);
+        el.dataset.i18n = key;
+        el.textContent = t(key);
+      }
+      document.querySelectorAll('#setup-step .setup-first').forEach(b => b.hidden = true);
+      document.getElementById('upgrade-save').hidden = false;
+      renderSetupRows();
+      document.getElementById('welcome-modal').classList.add('open');
+      document.documentElement.style.overflow = 'hidden';
+    }
+    async function finishUpgrade() {
+      const msg = document.getElementById('setup-msg');
+      if (!MEDIA_KINDS.some(k => setupState[k])) { msg.textContent = t('setup_pick_one'); return; }
+      const val = which => (document.querySelector(`#setup-rows input[data-which="${which}"]`) || {}).value || '';
+      const btn = document.getElementById('upgrade-save');
+      btn.disabled = true;
+      const res = await apiPost('/api/setup', { upgrade: true, media: setupState, subs_dir: val('subs'), books_dir: val('books'), manga_dir: val('manga') })
+        .catch(() => ({ error: 'network' }));
+      btn.disabled = false;
+      if (res.error) {
+        msg.innerHTML = `<span class="warn">${esc(setupError(res.error))}</span>`;
+        return;
+      }
+      window.location.reload();
+    }
+    function backToWelcome() {
+      document.getElementById('setup-step').hidden = true;
+      document.getElementById('welcome-pane').hidden = false;
+    }
+    function renderSetupRows() {
+      const defaults = MEDIA_BOOT.defaults || {};
+      const box = document.getElementById('setup-rows');
+      const kept = {};
+      box.querySelectorAll('input[data-which]').forEach(i => kept[i.dataset.which] = i.value);
+      box.innerHTML = MEDIA_KINDS.map(which => `<div class="set-media-row">
+          <div class="btns set-media-head">
+            <strong>${esc(t('set_media_' + which))}</strong>
+            <div class="seg" style="width:12em;">
+              <button type="button" class="seg-btn ${setupState[which] ? '' : 'active'}" onclick="setSetupOn('${which}', false)">${esc(t('lib_cache_off'))}</button>
+              <button type="button" class="seg-btn ${setupState[which] ? 'active' : ''}" onclick="setSetupOn('${which}', true)">${esc(t('lib_cache_on'))}</button>
+            </div>
+          </div>
+          <div class="btns" ${setupState[which] ? '' : 'hidden'}>
+            <input type="text" data-which="${which}" value="${esc(kept[which] ?? (MEDIA_BOOT.folders || {})[which] ?? defaults[which] ?? '')}" spellcheck="false" style="flex:1; min-width:0;">
+            ${MEDIA_BOOT.picker ? `<button class="btn" onclick="setupBrowse('${which}')">${esc(t('setup_browse'))}</button>` : ''}
+          </div>
+        </div>`).join('');
+    }
+    function setSetupOn(which, on) {
+      setupState[which] = on;
+      renderSetupRows();
+    }
+    async function setupBrowse(which) {
+      const input = document.querySelector(`#setup-rows input[data-which="${which}"]`);
+      const msg = document.getElementById('setup-msg');
+      msg.textContent = t('lib_picking');
+      const res = await apiPost('/api/library/pick', { which, title: t('set_media_' + which) })
+        .catch(() => ({ status: 'unavailable' }));
+      msg.textContent = '';
+      if (res.status === 'ok') input.value = res.path;
+    }
+    function setupError(error) {
+      if (error === 'busy') return t('lib_err_busy');
+      if (error === 'none_on') return t('setup_pick_one');
+      const which = MEDIA_KINDS.find(k => error.endsWith(k + '_dir')) || 'subs';
+      if (error.startsWith('not_full')) return t('lib_err_notfull', { path: (MEDIA_BOOT.defaults || {})[which] || '' });
+      return t('setup_err_make');
+    }
+    async function finishSetup(goGuide) {
+      const msg = document.getElementById('setup-msg');
+      if (!MEDIA_KINDS.some(k => setupState[k])) { msg.textContent = t('setup_pick_one'); return; }
+      const val = which => (document.querySelector(`#setup-rows input[data-which="${which}"]`) || {}).value || '';
+      const btns = document.querySelectorAll('#setup-step .setup-finish');
+      btns.forEach(b => b.disabled = true);
+      const res = await apiPost('/api/setup', { media: setupState, subs_dir: val('subs'), books_dir: val('books'), manga_dir: val('manga') })
+        .catch(() => ({ error: 'network' }));
+      btns.forEach(b => b.disabled = false);
+      if (res.error) {
+        msg.innerHTML = `<span class="warn">${esc(setupError(res.error))}</span>`;
+        return;
+      }
+      store.set('welcomed', '1');
+      store.set('reindex_told', APP_VERSION);
+      store.set('seen_version', APP_VERSION);
+      store.del('setup_again');
+      window.location.href = goGuide ? '/?tab=guide' : '/?tab=library';
+    }
     function closeWelcome(goGuide) {
       store.set('welcomed', '1');
-      store.set('reindex_told', '1');
+      store.set('reindex_told', APP_VERSION);
       store.set('seen_version', APP_VERSION);
+      if (MEDIA_BOOT.upgrade) apiPost('/api/setup/seen', {}).catch(() => {});
       document.getElementById('welcome-modal').classList.remove('open');
       document.documentElement.style.overflow = '';
       if (goGuide) window.location.href = '/?tab=guide';
@@ -3420,12 +3777,12 @@ Books folder/
     }
 
     async function checkReindex() {
-      if (store.get('reindex_told') === '1') return checkForUpdate();
+      if (store.get('reindex_told') === APP_VERSION) return checkForUpdate();
       let lib = null;
       try { lib = await fetch('/api/library/outdated').then(r => r.json()); } catch (e) {}
       const subs = (lib && lib.subs_outdated) || 0, books = (lib && lib.books_outdated) || 0;
+      store.set('reindex_told', APP_VERSION);
       if (!lib || !(subs + books)) return checkForUpdate();
-      store.set('reindex_told', '1');
       const m = document.getElementById('reindex-modal');
       m.querySelector('#reindex-body').innerHTML = t('reindex_body', { subs: fmt(subs), books: fmt(books) });
       m.classList.add('open');
@@ -3614,7 +3971,11 @@ Books folder/
     function closeWhatsNew() {
       document.getElementById('whatsnew-modal').classList.remove('open');
       document.documentElement.style.overflow = '';
-      checkReindex();
+      afterWhatsNew();
+    }
+    function afterWhatsNew() {
+      if (MEDIA_BOOT.upgrade && !setupMode()) openUpgradeSetup();
+      else checkReindex();
     }
 
     const CARET = '<svg class="dd-caret" viewBox="0 0 20 20"><path d="M5.516 7.548a.625.625 0 0 1 .884-.884l3.6 3.6 3.6-3.6a.625.625 0 1 1 .884.884l-4.042 4.042a.625.625 0 0 1-.884 0z"/></svg>';
@@ -3647,8 +4008,8 @@ Books folder/
       if (!e.target.closest('.topbar')) setMenu(false);
     });
 
-    const LABEL_STAGES = ['c-lang', 'c-theme', 'c-guide', 'c-library', 'c-media', 'c-saved', 'c-search'];
-    const TAB_ORDER = ['search', 'saved', 'media', 'library', 'guide'];
+    const LABEL_STAGES = ['c-lang', 'c-theme', 'c-guide', 'c-settings', 'c-library', 'c-media', 'c-saved', 'c-search'];
+    const TAB_ORDER = ['search', 'saved', 'media', 'library', 'settings', 'guide'];
     const SETTINGS = ['shortcuts-btn', 'lang-dd', 'theme-dd'];
     const DRAWER_STAGE = LABEL_STAGES.length + 1;
     const TABS_STAGE = DRAWER_STAGE + 1;
@@ -3807,7 +4168,9 @@ Books folder/
     function renderSearchControls() {
       const seg = document.getElementById('media-seg-side');
       if (seg) {
-        seg.innerHTML = MEDIAS.map(m => `<button type="button" class="seg-btn ${m === MEDIA ? 'active' : ''}" data-media="${m}" onclick="setMediaMode('${m}')">${esc(t('media_' + m))}</button>`).join('');
+        seg.innerHTML = MEDIAS.map(m => `<button type="button" class="seg-btn ${m === MEDIA ? 'active' : ''}" data-media="${m}" onclick="setMediaMode('${m}')">${esc(mediaLabel(m))}</button>`).join('');
+        seg.hidden = MEDIAS.length === 1;
+        seg.classList.toggle('seg-many', MEDIAS.length > 3);
       }
       const sortEl = document.getElementById('sort-select');
       if (sortEl) {
@@ -3859,18 +4222,23 @@ Books folder/
         initSavedTab();
       } else if (TAB === 'media') {
         const seg = document.getElementById('media-seg');
-        seg.innerHTML = MEDIAS.map(m => `<button type="button" class="seg-btn ${m === MEDIA_TAB_FILTER ? 'active' : ''}" data-media="${m}" onclick="setMediaTabFilter('${m}')">${esc(t('media_' + m))}</button>`).join('');
+        seg.innerHTML = MEDIAS.map(m => `<button type="button" class="seg-btn ${m === MEDIA_TAB_FILTER ? 'active' : ''}" data-media="${m}" onclick="setMediaTabFilter('${m}')">${esc(mediaLabel(m))}</button>`).join('');
+        seg.hidden = MEDIAS.length === 1;
+        seg.classList.toggle('seg-many', MEDIAS.length > 3);
         document.getElementById('media-filter').addEventListener('input', onMediaFilterInput);
         initMediaTab();
         initSidebarTooltip();
       } else if (TAB === 'library') {
         initLibraryTab();
+      } else if (TAB === 'settings') {
+        initSettingsTab();
       } else if (TAB === 'guide') {
         initGuideTab();
       }
 
-      if (store.get('welcomed') !== '1') openWelcome();
-      else if (!checkWhatsNew()) checkReindex();
+      if (!MEDIAS_ON.length) showMediaOff();
+      if (setupMode() || store.get('welcomed') !== '1') openWelcome();
+      else if (!checkWhatsNew()) afterWhatsNew();
     });
 
     function initSidebarTooltip() {
@@ -4087,7 +4455,7 @@ Books folder/
         const modal = document.getElementById('shortcuts-modal');
         if (modal && modal.classList.contains('open')) { toggleShortcutsModal(); return; }
         const welcome = document.getElementById('welcome-modal');
-        if (welcome && welcome.classList.contains('open')) { closeWelcome(false); return; }
+        if (welcome && welcome.classList.contains('open')) { if (!setupMode() && !upgradeOpen) closeWelcome(false); return; }
         const reset = document.getElementById('reset-modal');
         if (reset && reset.classList.contains('open')) { closeReset(false); return; }
         const changelog = document.getElementById('changelog-modal');
@@ -4179,6 +4547,10 @@ Books folder/
       <a class="nav-tab" data-tab="library" href="/?tab=library" draggable="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5L12 16l2.5-2.5"/></svg>
         <span data-i18n="tab_library">ライブラリ</span>
+      </a>
+      <a class="nav-tab" data-tab="settings" href="/?tab=settings" draggable="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+        <span data-i18n="tab_settings">設定</span>
       </a>
       <a class="nav-tab" data-tab="guide" href="/?tab=guide" draggable="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></svg>
@@ -4298,9 +4670,10 @@ Books folder/
           <span data-i18n="lib_run">インデックス作成</span>
         </button>
         <select id="lib-scope" class="lib-select" data-i18n-aria="lib_scope_aria" aria-label="インデックスする対象">
-          <option value="" data-i18n="lib_scope_all">字幕と書籍</option>
+          <option value="" data-i18n="lib_scope_all">すべてのメディア</option>
           <option value="subs" data-i18n="lib_scope_subs">字幕のみ</option>
           <option value="epub" data-i18n="lib_scope_epub">書籍のみ</option>
+          <option value="manga" data-i18n="lib_scope_manga">漫画のみ</option>
         </select>
       </div>
       <div id="lib-estimate"></div>
@@ -4314,7 +4687,14 @@ Books folder/
         <div id="an-status"></div>
         <div id="an-report"></div>
       </div>
-      <div class="lib-card" id="lib-data" style="margin-top:1.5em;"></div>
+    </div>
+  </div>
+
+  <div class="page doc" data-tab-panel="settings" hidden>
+    <div class="panel">
+      <h1 data-i18n="tab_settings">設定</h1>
+      <div class="lib-card" id="set-media"></div>
+      <div class="lib-card" id="lib-data" style="margin-top:1em;"></div>
       <div class="lib-card" id="lib-cache" style="margin-top:1em;"></div>
       <div class="lib-card" id="lib-favorites" style="margin-top:1.5em;">
         <h3 data-i18n="fav_title">お気に入りの書き出し・読み込み</h3>
@@ -4367,20 +4747,38 @@ Books folder/
   </div>
 
   <div class="modal-overlay" id="welcome-modal">
-    <div class="modal-card welcome big">
+    <div class="modal-card welcome big" id="welcome-card">
+     <div id="welcome-pane">
       <img src="/static/aobana.svg?v={{ asset_v }}" alt="" draggable="false">
       <h2 data-i18n="welcome_title">露草へようこそ</h2>
       <p data-i18n="welcome_body"></p>
       <ol>
-        <li data-i18n-html="welcome_s1"></li>
+        <li data-i18n-html="welcome_s0_setup" id="welcome-s0" hidden></li>
+        <li data-i18n-html="welcome_s1" id="welcome-s1"></li>
         <li data-i18n-html="welcome_s2"></li>
         <li data-i18n-html="welcome_s3"></li>
       </ol>
       <p data-i18n-html="welcome_more"></p>
-      <div class="btns">
+      <div class="btns" id="welcome-btns">
         <button class="btn" onclick="closeWelcome(true)" data-i18n="welcome_guide">ガイドを読む</button>
         <button class="btn primary" onclick="closeWelcome(false)" data-i18n="welcome_start">はじめる</button>
       </div>
+      <div class="btns" id="welcome-setup-btns" hidden>
+        <button class="btn primary" onclick="openSetupStep()" data-i18n="setup_open">Aobana を設定する</button>
+      </div>
+     </div>
+    <div id="setup-step" hidden>
+      <h2 data-i18n="setup_title" id="setup-title">はじめの設定</h2>
+      <p data-i18n="setup_lead" id="setup-lead"></p>
+      <div id="setup-rows"></div>
+      <div class="lib-msg facts" id="setup-msg" style="margin:1em 0 1.2em; min-height:1.5em;"></div>
+      <div class="btns">
+        <button class="btn setup-first" onclick="backToWelcome()" data-i18n="setup_back">戻る</button>
+        <button class="btn setup-finish setup-first" onclick="finishSetup(true)" data-i18n="welcome_guide">ガイドを読む</button>
+        <button class="btn primary setup-finish setup-first" onclick="finishSetup(false)" data-i18n="welcome_start">はじめる</button>
+        <button class="btn primary setup-finish" id="upgrade-save" onclick="finishUpgrade()" data-i18n="upgrade_save" hidden>保存</button>
+      </div>
+    </div>
     </div>
   </div>
 

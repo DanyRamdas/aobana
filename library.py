@@ -8,7 +8,7 @@ import threading
 import time
 
 import paths
-from utils import FILTER_COLUMNS, count_rows, filtered_rows, outdated_sources
+from utils import FILTER_COLUMNS, count_rows, filtered_rows, outdated_sources, missing_tables
 
 _LOCK = threading.Lock()
 _STATE = {"running": False}
@@ -40,16 +40,19 @@ def _unfinished():
     except (OSError, ValueError):
         return None
 
-_STAGES = (("subs", "indexer.py"), ("epub", "epub_indexer.py"))
+_STAGES = (("subs", "indexer.py"), ("epub", "epub_indexer.py"), ("manga", "manga_indexer.py"))
+_STAGE_MEDIA = {"subs": "subs", "epub": "books", "manga": "manga"}
 _SUMMARY_RE = {
     "subs": re.compile(r"Skipped (\d+) unchanged files\. Indexed (\d+) new/updated files\. "
                        r"Removed (\d+) deleted files"),
     "epub": re.compile(r"Skipped (\d+) unchanged files\. Indexed (\d+) new/updated books\. "
                        r"Removed (\d+) deleted"),
+    "manga": re.compile(r"Skipped (\d+) unchanged files\. Indexed (\d+) new/updated volumes\. "
+                        r"Removed (\d+) deleted"),
 }
 
 
-def _count_files(root, ext, skip_dot, progress=None):
+def _count_files(root, ext, skip_dot, progress=None, count_other=True):
     found = other = 0
     if not root or not os.path.isdir(root):
         return None
@@ -58,12 +61,29 @@ def _count_files(root, ext, skip_dot, progress=None):
         for f in files:
             if f.lower().endswith(ext) and not (skip_dot and f.startswith('.')):
                 found += 1
-            elif not f.startswith('.'):
+            elif count_other and not f.startswith('.'):
                 other += 1
         if progress and time.monotonic() - last > 0.25:
             last = time.monotonic()
             progress(found, other)
     return {"files": found, "loose": 0, "other": other}
+
+
+def _has_files(root, ext, skip_dot):
+    if not root or not os.path.isdir(root):
+        return False
+    for _, _, files in os.walk(root):
+        if any(f.lower().endswith(ext) and not (skip_dot and f.startswith('.')) for f in files):
+            return True
+    return False
+
+
+def _stage_inputs(stage):
+    if stage == "subs":
+        return paths.subs_dir(), (".srt", ".ass", ".ssa"), False, paths.subs_db()
+    if stage == "manga":
+        return paths.manga_dir(), ".mokuro", True, paths.manga_db()
+    return paths.books_dir(), ".epub", True, paths.epub_db()
 
 
 def _indexed(conn, table):
@@ -87,7 +107,7 @@ def _figures_path():
 
 
 def _figures_key():
-    return [paths.subs_dir(), paths.books_dir()]
+    return [paths.subs_dir(), paths.books_dir(), paths.manga_dir()]
 
 
 def _load_figures():
@@ -111,13 +131,13 @@ def _save_figures(doc):
 
 def _walk_figures(key, shown):
     started = time.time()
-    doc = {"key": key, "complete": False, "subs_disk": None, "books_disk": None}
+    doc = {"key": key, "complete": False, "subs_disk": None, "books_disk": None, "manga_disk": None}
     last_save = 0.0
 
     def publish(save=False):
         nonlocal last_save
         with _LOCK:
-            _FSTATE.update(subs_disk=doc["subs_disk"], books_disk=doc["books_disk"])
+            _FSTATE.update(subs_disk=doc["subs_disk"], books_disk=doc["books_disk"], manga_disk=doc["manga_disk"])
         if save or time.monotonic() - last_save > _FIG_SAVE_EVERY:
             last_save = time.monotonic()
             if not shown:
@@ -125,13 +145,14 @@ def _walk_figures(key, shown):
 
     try:
         for name, root, ext, skip_dot in (("subs_disk", key[0], (".srt", ".ass", ".ssa"), False),
-                                          ("books_disk", key[1], ".epub", True)):
+                                          ("books_disk", key[1], ".epub", True),
+                                          ("manga_disk", key[2], ".mokuro", True)):
             def progress(found, other, name=name):
                 doc[name] = {"files": found, "loose": 0, "other": other, "counting": True}
                 publish()
             if root and os.path.isdir(root):
                 doc[name] = {"files": 0, "loose": 0, "other": 0, "counting": True}
-            doc[name] = _count_files(root, ext, skip_dot, progress)
+            doc[name] = _count_files(root, ext, skip_dot, progress, count_other=name != "manga_disk")
             publish()
         doc.update(complete=True, counted_at=time.time())
         _save_figures(doc)
@@ -158,7 +179,7 @@ def ensure_figures():
             return
         _FIG_STALE["stale"] = False
         _FSTATE.update(running=True, key=key, again=False, started_at=time.time(), saved=saved if good else None,
-                       subs_disk=None, books_disk=None)
+                       subs_disk=None, books_disk=None, manga_disk=None)
     threading.Thread(target=_walk_figures, args=(key, good), daemon=True).start()
 
 
@@ -167,14 +188,15 @@ def figures():
     with _LOCK:
         running = bool(_FSTATE.get("running"))
         saved = _FSTATE.get("saved")
+        keys = ("subs_disk", "books_disk", "manga_disk")
         if saved and saved.get("key") == _figures_key():
-            out = {"subs_disk": saved.get("subs_disk"), "books_disk": saved.get("books_disk")}
+            out = {k: saved.get(k) for k in keys}
         else:
-            out = {"subs_disk": _FSTATE.get("subs_disk"), "books_disk": _FSTATE.get("books_disk")}
+            out = {k: _FSTATE.get(k) for k in keys}
     out = {k: (dict(v) if v else v) for k, v in out.items()}
     out["counting"] = running
     listed = filtered_rows(paths.filtered_list())
-    for key, media in (("subs_disk", "subs"), ("books_disk", "epub")):
+    for key, media in (("subs_disk", "subs"), ("books_disk", "epub"), ("manga_disk", "manga")):
         if out[key]:
             out[key]["filtered"] = sum(1 for r in listed if r["media"] == media)
     return out
@@ -202,13 +224,17 @@ def dismiss_notice(notice_id):
         _NOTICES[:] = [n for n in _NOTICES if n["id"] != notice_id]
 
 
-def describe(db_subs, db_epub):
+def describe(db_subs, db_epub, db_manga=None):
     subs, books = paths.subs_dir(), paths.books_dir()
     fig = figures()
     return {
         "installed": paths.INSTALLED,
+        "media": paths.media_state(),
+        "setup_needed": paths.setup_needed(),
+        "default_folders": {k: paths.default_media_folder(k) for k in paths.MEDIA_KINDS},
         "subs_dir": subs,
         "books_dir": books,
+        "manga_dir": paths.manga_dir(),
         "data_dir": paths.db_dir(),
         "db_default": os.path.join(paths.STORE_DIR, paths.DB_FOLDER),
         "db_is_default": _same_folder(paths.db_dir(), paths.default_db_dir()),
@@ -217,23 +243,32 @@ def describe(db_subs, db_epub):
         "port_env": bool(os.environ.get("AOBANA_PORT")),
         "subs_disk": fig["subs_disk"],
         "books_disk": fig["books_disk"],
+        "manga_disk": fig["manga_disk"],
         "counting": fig["counting"],
         "subs_indexed": _indexed(db_subs, "subtitles"),
         "books_indexed": _indexed(db_epub, "epubs"),
+        "manga_indexed": _indexed(db_manga, "manga"),
         "subs_outdated": outdated_sources(db_subs, "subs"),
         "books_outdated": outdated_sources(db_epub, "epub"),
+        "manga_outdated": outdated_sources(db_manga, "manga"),
+        "subs_tables": missing_tables(db_subs, "subs"),
+        "books_tables": missing_tables(db_epub, "epub"),
+        "manga_tables": missing_tables(db_manga, "manga"),
         "index": index_status(),
     }
 
 
-def set_folders(subs_dir, books_dir):
+def set_folders(subs_dir, books_dir, manga_dir=None):
     if _STATE.get("running"):
         return "busy"
     cfg = paths.load_config()
-    for key, value in (("subs_dir", subs_dir), ("books_dir", books_dir)):
+    for key, value in (("subs_dir", subs_dir), ("books_dir", books_dir), ("manga_dir", manga_dir)):
         if value is None:
             continue
-        value = os.path.abspath(os.path.expanduser(str(value).strip().strip('"')))
+        value = os.path.expanduser(str(value).strip().strip('"'))
+        if not os.path.isabs(value):
+            return f"not_full:{key}"
+        value = os.path.abspath(value)
         if not os.path.isdir(value):
             return f"not_found:{key}"
         cfg[key] = value
@@ -241,8 +276,109 @@ def set_folders(subs_dir, books_dir):
     return None
 
 
-_DB_NAMES = ("subs.db", "epub.db")
+def set_media(media):
+    if _STATE.get("running"):
+        return "busy"
+    cfg = paths.load_config()
+    state = {k: paths.media_enabled(k, cfg) for k in paths.MEDIA_KINDS}
+    for kind, on in (media or {}).items():
+        if kind not in paths.MEDIA_KINDS:
+            continue
+        state[kind] = bool(on)
+        current = {"subs": paths.subs_dir, "books": paths.books_dir, "manga": paths.manga_dir}[kind]()
+        if kind == "manga" and current and "manga_dir" not in cfg:
+            current = None
+        if on and not current:
+            folder = paths.default_media_folder(kind)
+            try:
+                os.makedirs(folder, exist_ok=True)
+            except OSError:
+                return f"not_found:{paths.MEDIA_DIR_KEYS[kind]}"
+            cfg[paths.MEDIA_DIR_KEYS[kind]] = folder
+    cfg["media"] = state
+    paths.save_config(cfg)
+    _FIG_STALE["stale"] = True
+    _after_db_change()
+    return None
+
+
+def finish_setup(media, subs_dir=None, books_dir=None, manga_dir=None, fresh=True):
+    media = {k: bool((media or {}).get(k)) for k in paths.MEDIA_KINDS}
+    if not any(media.values()):
+        return "none_on"
+    chosen = {}
+    for kind, value in (("subs", subs_dir), ("books", books_dir), ("manga", manga_dir)):
+        value = str(value or "").strip().strip('"')
+        if media[kind] and value:
+            folder = os.path.expanduser(value)
+            if not os.path.isabs(folder):
+                return f"not_full:{paths.MEDIA_DIR_KEYS[kind]}"
+            folder = os.path.abspath(folder)
+            try:
+                os.makedirs(folder, exist_ok=True)
+            except OSError:
+                return f"not_found:{paths.MEDIA_DIR_KEYS[kind]}"
+            chosen[kind] = folder
+    err = set_folders(chosen.get("subs"), chosen.get("books"), chosen.get("manga"))
+    if err:
+        return err
+    cfg = paths.load_config()
+    if fresh:
+        for key in paths.MEDIA_DIR_KEYS.values():
+            cfg.setdefault(key, "")
+        cfg.pop("check_asked", None)
+    cfg["media_asked"] = True
+    paths.save_config(cfg)
+    err = set_media(media)
+    if not err and fresh:
+        _forget_last_run()
+        _forget_check()
+    return err
+
+
+def check_asked():
+    return bool(paths.load_config().get("check_asked"))
+
+
+def media_asked():
+    return bool(paths.load_config().get("media_asked"))
+
+
+def mark_media_asked():
+    cfg = paths.load_config()
+    if not cfg.get("media_asked"):
+        cfg["media_asked"] = True
+        paths.save_config(cfg)
+
+
+def mark_check_asked():
+    cfg = paths.load_config()
+    if not cfg.get("check_asked"):
+        cfg["check_asked"] = True
+        paths.save_config(cfg)
+
+
+def _forget_last_run():
+    with _LOCK:
+        if not _STATE.get("running"):
+            _STATE.clear()
+            _STATE["running"] = False
+
+
+def _forget_check():
+    with _LOCK:
+        if _ASTATE.get("running"):
+            return
+        _ASTATE.clear()
+        _ASTATE["running"] = False
+    folder = os.path.dirname(_report_path())
+    for name in ("analysis.json", "analysis.db"):
+        _remove_retrying(os.path.join(folder, name))
+
+
+_DB_NAMES = ("subs.db", "epub.db", "manga.db")
 _DB_SIDECARS = ("", "-wal", "-shm", "-journal")
+_DB_OF_MEDIA = {"subs": "subs.db", "books": "epub.db", "manga": "manga.db"}
 
 
 _DB_COMPANIONS = ("filtered.tsv", "analysis.json", "analysis.db")
@@ -338,29 +474,55 @@ def _move_databases(target):
                 pass
         return "failed", []
 
-    old_kept = []
-    if copied:
-        for name in copied:
-            path = os.path.join(src, name)
-            for attempt in range(10):
-                try:
-                    os.remove(path)
-                    break
-                except FileNotFoundError:
-                    break
-                except OSError:
-                    time.sleep(0.3)
-            else:
-                old_kept.append(path)
+    old_kept = [os.path.join(src, name) for name in copied if not _remove_retrying(os.path.join(src, name))]
     _after_db_change()
     return None, old_kept
 
 
-def _after_db_change():
+def _remove_retrying(path):
+    for attempt in range(10):
+        try:
+            os.remove(path)
+            return True
+        except FileNotFoundError:
+            return True
+        except OSError:
+            time.sleep(0.3)
+    return False
+
+
+def drop_index(kind):
+    name = _DB_OF_MEDIA.get(kind)
+    if not name:
+        return "unknown", []
+    with _LOCK:
+        if _STATE.get("running") or _STATE.get("moving") or _ASTATE.get("running"):
+            return "busy", []
+        _STATE["moving"] = True
+    try:
+        folder = paths.db_dir()
+        files = [os.path.join(folder, name + s) for s in _DB_SIDECARS if os.path.isfile(os.path.join(folder, name + s))]
+        if not files:
+            return "none", []
+        from engine import clear_disk_cache
+        clear_disk_cache()
+        _after_db_change(warm=False)
+        kept = [f for f in files if not _remove_retrying(f)]
+        _after_db_change()
+        _FIG_STALE["stale"] = True
+        _forget_last_run()
+        return None, kept
+    finally:
+        with _LOCK:
+            _STATE.pop("moving", None)
+
+
+def _after_db_change(warm=True):
     try:
         from engine import reset_caches, warm_media_library
         reset_caches()
-        threading.Thread(target=warm_media_library, daemon=True).start()
+        if warm:
+            threading.Thread(target=warm_media_library, daemon=True).start()
     except Exception:
         pass
 
@@ -450,7 +612,8 @@ def drop_profile_handoff(port, written_at=None):
 
 
 def open_folder(which):
-    target = {"subs": paths.subs_dir, "books": paths.books_dir, "data": paths.db_dir}.get(which)
+    target = {"subs": paths.subs_dir, "books": paths.books_dir, "manga": paths.manga_dir,
+              "data": paths.db_dir}.get(which)
     if target is None:
         return "unknown"
     path = target()
@@ -501,10 +664,16 @@ def stop_analysis():
     return True
 
 
-def start_indexing(only=None, outdated=False):
-    stages = tuple(st for st in _STAGES if only in (None, "", "all") or st[0] == only)
+def start_indexing(only=None, outdated=False, tables=False):
+    media = paths.media_state()
+    stages = tuple(st for st in _STAGES if (only in (None, "", "all") or st[0] == only)
+                   and media[_STAGE_MEDIA[st[0]]])
+    def wanted(stage):
+        root, ext, skip_dot, db = _stage_inputs(stage)
+        return os.path.isfile(db) or (not tables and _has_files(root, ext, skip_dot))
+    stages = tuple(st for st in stages if wanted(st[0]))
     if not stages:
-        return False
+        return "nothing"
     with _LOCK:
         if _STATE.get("running") or _STATE.get("moving") or _ASTATE.get("running"):
             return False
@@ -515,16 +684,16 @@ def start_indexing(only=None, outdated=False):
             "started_at": time.time(), "finished_at": None, "error": None,
             "results": {}, "skipped_clash": [], "failed": [], "ignored_other": {}, "filtered": {},
             "root_missing": [], "root_not_set": [], "log": [], "stopping": False, "stopped": False,
-            "outdated": bool(outdated),
+            "outdated": bool(outdated), "tables": bool(tables), "phase": "",
         })
     _clear_stop("index")
     try:
         with open(_run_marker(), "w", encoding="utf-8") as fh:
             json.dump({"started_at": time.time(), "stages": [st[0] for st in stages],
-                       "outdated": bool(outdated)}, fh)
+                       "outdated": bool(outdated), "tables": bool(tables)}, fh)
     except OSError:
         pass
-    threading.Thread(target=_run, args=(stages, outdated), daemon=True).start()
+    threading.Thread(target=_run, args=(stages, outdated, tables), daemon=True).start()
     return True
 
 
@@ -533,15 +702,15 @@ def _set(**kw):
         _STATE.update(kw)
 
 
-def _run(stages, outdated=False):
+def _run(stages, outdated=False, tables=False):
     env = dict(os.environ, AOBANA_PROGRESS="1", PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1",
                AOBANA_STOP_FILE=_stop_file("index"))
     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     try:
         for stage, script in stages:
-            _set(stage=stage, done=0, total=0, current="")
+            _set(stage=stage, done=0, total=0, current="", phase="")
             proc = subprocess.Popen(
-                [sys.executable, os.path.join(paths.BASE_DIR, script)] + (["--outdated"] if outdated else []),
+                [sys.executable, os.path.join(paths.BASE_DIR, script)] + (["--tables"] if tables else ["--outdated"] if outdated else []),
                 cwd=paths.BASE_DIR, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 encoding="utf-8", errors="replace", creationflags=flags)
             for line in proc.stdout:
@@ -584,7 +753,12 @@ def _read_line(stage, line):
             log.append(line)
             del log[:-200]
         if line.startswith("TOTAL "):
-            _STATE["total"] = int(line.split()[1])
+            _STATE.update(total=int(line.split()[1]), phase="")
+        elif line.startswith(("CHAPTERS building", "LENGTHS building", "LEXICON building")):
+            _STATE.update(phase=line.split()[0].lower(), done=0, total=0, current="")
+        elif line.startswith("LENGTHS ") and "/" in line:
+            done, _, total = line.split()[1].partition("/")
+            _STATE.update(done=int(done), total=int(total))
         elif line.startswith("PROGRESS "):
             head, _, rel = line[len("PROGRESS "):].partition(" ")
             done, _, total = head.partition("/")
@@ -723,16 +897,31 @@ def filter_flagged(ids):
         rows = filtered_rows(paths.filtered_list())
         have = {(r["media"], r["name"]) for r in rows}
         added, refused = [], []
+        id_set = set(ids)
+        for kept in [it for it in report["items"] if it["reason"] == "duplicate_kept" and it["id"] in id_set]:
+            group = [it for it in report["items"]
+                     if it["media"] == kept["media"] and it.get("keep") == kept["keep"]]
+            stay = [it for it in group if it["id"] not in id_set and not it.get("filtered")]
+            if stay:
+                new_keep = stay[0]
+                kept["reason"] = "duplicate"
+                kept["how"] = new_keep.get("how", "same_bytes" if kept["media"] == "subs" else "same_text")
+                kept["share"] = new_keep.get("share", 1.0)
+                new_keep["reason"] = "duplicate_kept"
+                for it in group:
+                    it["keep"] = new_keep["name"]
+                    it["keep_path"] = new_keep["path"]
         for item in report["items"]:
-            if item["id"] not in ids:
+            if item["id"] not in id_set:
                 continue
             media = item["media"]
             if (item["reason"] not in FILTERABLE or not roots.get(media)
                     or not _same_folder(roots[media], report["roots"][media])):
                 refused.append(item["path"])
                 continue
+            reason = "duplicate" if item["reason"] == "duplicate_kept" else item["reason"]
             if (media, item["name"]) not in have:
-                rows.append({"media": media, "name": item["name"], "reason": item["reason"],
+                rows.append({"media": media, "name": item["name"], "reason": reason,
                              "keep": item.get("keep", ""), "date": time.strftime("%Y-%m-%d %H:%M:%S")})
                 have.add((media, item["name"]))
             item["filtered"] = True

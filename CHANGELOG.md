@@ -1,10 +1,45 @@
 # Changelog
 
+## 1.4 — Manga, `.ass` furigana, a Settings tab, setup in the app
+
+- **Manga**: `.mokuro` files, which mokuro writes when it runs OCR on manga pages, are searched as a
+  third media beside subtitles and books, with their own folder (one folder per series), switch,
+  database (`manga.db`) and Media list; a hit shows its page. The text is the OCR as the file holds
+  it: Aobana does not re-read the images, so a misread word or a missed bubble shows as mokuro read
+  it. Aobana puts each page's text in reading order (the right page of a spread first), keeps a
+  bubble read twice only once, and restores ellipses and dashes the OCR turns into other characters.
+- **`.ass` furigana**: the small furigana lines of an `.ass` file are placed over their kanji instead
+  of being left out. Tested on 502 `.ass` files with furigana (43,009 readings), about 99.5% sit on
+  the right characters. The first **Index library** after updating re-reads `.ass` and `.ssa` files
+  only; `.srt` files and books are not re-read.
+- **Settings tab**: media, folders, the databases folder, the search cache, favorites, the port and
+  the reset move out of the Library tab. Each media can be turned off (hidden everywhere, its
+  database kept) and its database removed with **Delete database**, which asks first.
+- **Setup in the app**: the installer asks for no folders. A new install's first start asks which
+  media are used and where their folders go; an update from 1.3 or earlier shows the same window
+  once, after the release notes, filled in with the folders set now. **Reset all settings to
+  default** brings it back.
+- **The furigana lookups live in the index**: an index from 1.3 or earlier gets a table built once
+  (the Library tab's **Update**, or any index run), reading no file. Before, every furigana line was
+  read into memory, which on a 122 GB library held up the end of a run and the opening of a book
+  for about 20 minutes.
+- **Check library**: a book in the books folder itself is kept over its copy in a subfolder, a
+  subtitle file in a show folder over a loose copy; each duplicate list has **Invert selection**.
+  The size and time estimate is kept until the files change, and the check question comes back
+  after a reinstall.
+- **Windows**: installing over a running Aobana closes it first instead of stopping at **Preparing
+  to Install**; the setup run as administrator over a per-user install updates it; the uninstaller
+  ticks nothing by default.
+- **Fixes**: a search for one media that is off or has no database no longer answers with the
+  other; the search sidebar lists all titles again when the chosen ones have no hit.
+
 ## 1.3 — Faster search on big libraries, search inside a title
 
 - **Faster search**: common words are found in up to half the time, with half the memory. The
-  first **Index library** after updating adds a table of line lengths to the index, once; nothing
-  is read again, but on a very large library that run takes a while.
+  first **Index library** after this update adds a table to the index, once: it stores how long
+  each line is when shown (about 10 bytes a line), so a search no longer works that out for every
+  match. Together with the other search changes, searches for common words take about 45% less
+  time.
 - **Search cache** (optional, off by default): turned on in its own box in the Library tab, a
   search that took a while is kept on disk (up to 1 GB, the oldest dropped first), so it shows at
   once, even after a restart. The box shows the space it uses and clears it at any time;

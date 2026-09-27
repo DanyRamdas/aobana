@@ -31,3 +31,5 @@ The source repository includes only Noto Sans JP from this list (`static/fonts/`
 
 - **[Nadeshiko](https://github.com/BrigadaSOS/Nadeshiko)** (AGPL-3.0) inspired several of the
   search page's features. No code was copied from it.
+- **[mokuro](https://github.com/kha-white/mokuro)** (GPL-3.0) writes the `.mokuro` files that Aobana
+  reads for manga. Aobana reads only those files; no mokuro code is included.

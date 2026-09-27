@@ -12,7 +12,6 @@ UPDATE_EXIT_CODE=75
 
 PORT="$AOBANA_PORT"
 CONFIG="$AOBANA_DIR/data/config.json"
-[ -f "$CONFIG" ] || CONFIG="$AOBANA_DIR/config.json"
 if [ -z "$PORT" ] && [ -f "$CONFIG" ]; then
     PORT=$(sed -n 's/.*"port"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$CONFIG" | head -n 1)
 fi

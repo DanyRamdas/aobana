@@ -12,16 +12,13 @@ if sys.stderr is None:
     sys.stderr = open(os.devnull, 'w')
 
 import paths
-if __name__ == "__main__":
-    paths.move_into_data_folder()
-
 from flask import Flask, render_template, make_response, request, jsonify, g, abort
-from engine import get_search_results, format_episode_title, format_book_title, get_formatted_title, get_ruby_lexicon
+from engine import get_search_results, format_episode_title, format_book_title, get_formatted_title, warm_ruby_lexicon
 import engine
 import library
 import folder_picker
 import updater
-from utils import outdated_sources
+from utils import outdated_sources, missing_tables
 
 app = Flask(__name__, template_folder='.', static_folder='static')
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 365 * 24 * 3600
@@ -47,7 +44,7 @@ def favicon():
 
 BOOT_ID = os.environ.setdefault("AOBANA_BOOT_ID", uuid.uuid4().hex)
 
-VERSION = "1.3"
+VERSION = "1.4"
 RELEASES_URL = "https://github.com/Wyzmic/aobana/releases/latest"
 RELEASES_API = "https://api.github.com/repos/Wyzmic/aobana/releases"
 LATEST_API = f"{RELEASES_API}/latest"
@@ -81,14 +78,15 @@ def check_for_update():
 
 threading.Thread(target=check_for_update, daemon=True).start()
 
-threading.Thread(target=get_ruby_lexicon, daemon=True).start()
+threading.Thread(target=warm_ruby_lexicon, daemon=True).start()
 from engine import warm_media_library
 threading.Thread(target=warm_media_library, daemon=True).start()
 
 def get_db():
+    media = paths.media_state() if 'db_subs' not in g or 'db_epub' not in g else None
     if 'db_subs' not in g:
         subs_path = paths.subs_db()
-        if os.path.exists(subs_path):
+        if media["subs"] and os.path.exists(subs_path):
             g.db_subs = sqlite3.connect(f"file:{subs_path}?mode=ro", uri=True)
             g.db_subs.row_factory = sqlite3.Row
             g.db_subs.execute("PRAGMA mmap_size = 2147483648;")
@@ -97,7 +95,7 @@ def get_db():
 
     if 'db_epub' not in g:
         epub_path = paths.epub_db()
-        if os.path.exists(epub_path):
+        if media["books"] and os.path.exists(epub_path):
             g.db_epub = sqlite3.connect(f"file:{epub_path}?mode=ro", uri=True)
             g.db_epub.row_factory = sqlite3.Row
             g.db_epub.execute("PRAGMA mmap_size = 536870912;")
@@ -106,14 +104,23 @@ def get_db():
 
     return g.db_subs, g.db_epub
 
+
+def get_manga_db():
+    if 'db_manga' not in g:
+        path = paths.manga_db()
+        if paths.media_enabled("manga") and os.path.exists(path):
+            g.db_manga = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            g.db_manga.row_factory = sqlite3.Row
+        else:
+            g.db_manga = None
+    return g.db_manga
+
 @app.teardown_appcontext
 def close_db(error):
-    db_subs = g.pop('db_subs', None)
-    if db_subs is not None:
-        db_subs.close()
-    db_epub = g.pop('db_epub', None)
-    if db_epub is not None:
-        db_epub.close()
+    for name in ('db_subs', 'db_epub', 'db_manga'):
+        conn = g.pop(name, None)
+        if conn is not None:
+            conn.close()
 
 active_queries = {}
 queries_lock = threading.Lock()
@@ -127,9 +134,18 @@ def index():
     resp = make_response(render_template("index.html", q=q, sort=sort, exact=exact, media=media,
                                          boot=BOOT_ID, asset_v=ASSET_V, version=VERSION,
                                          handoff=library.load_profile_handoff(PORT),
-                                         handoff_pending=library.handoff_pending_from(PORT)))
+                                         handoff_pending=library.handoff_pending_from(PORT),
+                                         media_boot=_media_boot()))
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+def _media_boot():
+    setup = paths.setup_needed()
+    return {"on": paths.media_state(), "setup": setup, "upgrade": not setup and not library.media_asked(),
+            "defaults": {k: paths.default_media_folder(k) for k in paths.MEDIA_KINDS},
+            "folders": {"subs": paths.subs_dir(), "books": paths.books_dir(), "manga": paths.manga_dir()},
+            "picker": folder_picker.available(), "check_asked": library.check_asked()}
+
 
 @app.route("/api/search", methods=["GET"])
 def api_search():
@@ -147,9 +163,13 @@ def api_search():
     seed = request.args.get("seed", type=int)
 
     db_subs, db_epub = get_db()
+    db_manga = get_manga_db()
+    if ((media == "epub" and db_epub is None) or (media == "subs" and db_subs is None)
+            or (media == "manga" and db_manga is None)):
+        return jsonify({"results": [], "folder_counts": {}, "global_total": 0, "all_folders": [], "has_more": False})
     abort_flag = [False]
     search = (q, sort, seed if sort == "random" else None, media, exact, None if q else folder, file_param)
-    mine = (search, abort_flag, (db_subs, db_epub))
+    mine = (search, abort_flag, (db_subs, db_epub, db_manga))
 
     with queries_lock:
         running = active_queries.get(client_key, [])
@@ -169,7 +189,7 @@ def api_search():
         results, folder_counts, global_total, all_folders, has_more = get_search_results(
             db_subs, q, sort=sort, folder=folder, exact=exact, 
             abort_flag=abort_flag, limit=limit, offset=offset, file=file_param,
-            db_epub=db_epub, media=media, seed=seed
+            db_epub=db_epub, media=media, seed=seed, db_manga=db_manga
         )
         if abort_flag[0]:
             return jsonify({"aborted": True}), 499
@@ -201,7 +221,8 @@ def api_search_progress():
         db_subs, db_epub, request.args.get("q", ""),
         sort=request.args.get("sort", "recommended"), seed=request.args.get("seed", type=int),
         media=request.args.get("media", "all"), exact=request.args.get("exact") == "on",
-        folder=request.args.get("folder") or None, file=request.args.get("file") or None))
+        folder=request.args.get("folder") or None, file=request.args.get("file") or None,
+        db_manga=get_manga_db()))
 
 @app.route("/api/episodes", methods=["GET"])
 def api_episodes():
@@ -259,6 +280,18 @@ def api_episodes():
         except Exception:
             pass
 
+    db_manga = get_manga_db()
+    if not files_data and media in ("all", "manga") and db_manga is not None:
+        from engine import format_manga_title
+        try:
+            for row in db_manga.execute(
+                    "SELECT volume FROM sources WHERE title = ? ORDER BY relpath ASC", (folder,)):
+                file_key = f"{folder}\\{row['volume']}"
+                if not any(x["file"] == file_key for x in files_data):
+                    files_data.append({"file": file_key, "title": format_manga_title(file_key)})
+        except Exception:
+            pass
+
     if files_data and any('話' in x['title'] for x in files_data):
         files_data.sort(key=lambda x: (
             1 if '話' in x['title'] else (0 if re.search(r'(?:Movie|Film|劇場版|映画|劇場|\[映\])', x['file'], re.IGNORECASE) else 1),
@@ -275,8 +308,15 @@ def api_context():
     media = request.args.get("media", "").strip().lower()
     
     db_subs, db_epub = get_db()
+    db_manga = get_manga_db()
     if rowid is None:
         return jsonify({"error": "Missing rowid"}), 400
+
+    if media not in ("subs", "epub", "manga") and db_manga is not None and file:
+        if db_manga.execute("SELECT 1 FROM manga WHERE rowid = ? AND file = ?", (rowid, file)).fetchone():
+            media = "manga"
+    if media == "manga":
+        return _manga_context(db_manga, rowid, file, q)
 
     if not file:
         if media == "epub" and db_epub is not None:
@@ -365,6 +405,37 @@ def api_context():
         text = r["clean_text"] if r else None
     return jsonify({"context": html, "lines": context_html_lines, "match": match, "text": text})
 
+def _manga_context(db_manga, rowid, file, q):
+    if db_manga is None:
+        return jsonify({"error": "Missing file or unknown rowid"}), 400
+    if not file:
+        r = db_manga.execute("SELECT file FROM manga WHERE rowid = ?", (rowid,)).fetchone()
+        file = r["file"] if r else ""
+    if not file:
+        return jsonify({"error": "Missing file or unknown rowid"}), 400
+
+    def window(name, default):
+        n = request.args.get(name, type=int)
+        return default if n is None else max(0, min(10, n))
+
+    rows = db_manga.execute("""
+        SELECT rowid, line, clean_text FROM manga
+        WHERE rowid BETWEEN ? AND ? AND file = ?
+          AND source_id = (SELECT source_id FROM manga WHERE rowid = ?)
+        ORDER BY rowid ASC
+    """, (rowid - window("before", 4), rowid + window("after", 4), file, rowid)).fetchall()
+    from engine import highlight_and_furigana, analyze_query, split_negated_terms, work_key
+    pos_q, _ = split_negated_terms(q)
+    clean_q = pos_q.strip('""“”')
+    content_bases, _, readings, base_groups = analyze_query(clean_q)
+    lines = [highlight_and_furigana(r['line'], content_bases, clean_q, mark=True, bold=False,
+                                    base_groups=base_groups, readings=readings, work=work_key("manga", file))
+             for r in rows]
+    match = next((i for i, r in enumerate(rows) if r['rowid'] == rowid), None)
+    text = rows[match]["clean_text"] if match is not None else None
+    return jsonify({"context": '<div class="spacer"></div>'.join(lines), "lines": lines, "match": match, "text": text})
+
+
 @app.route("/api/locate", methods=["GET"])
 def api_locate():
     texts = [t.replace('\xa0', ' ').strip() for t in request.args.getlist("text") if t.strip()]
@@ -372,10 +443,11 @@ def api_locate():
     if not texts:
         return jsonify({"error": "Missing text"}), 400
     db_subs, db_epub = get_db()
-    if db_subs is None and db_epub is None:
+    db_manga = get_manga_db()
+    if db_subs is None and db_epub is None and db_manga is None:
         return jsonify({"rows": []})
 
-    from engine import get_tagger, get_formatted_title, format_book_title
+    from engine import get_tagger, title_of
     contains = " AND ".join(["instr(replace(clean_text, char(160), ' '), ?) > 0"] * len(texts))
     tokenizer_obj, mode = get_tagger()
     forms = []
@@ -387,7 +459,7 @@ def api_locate():
     forms = sorted(forms, key=len, reverse=True)[:3]
     match = " AND ".join('base_forms:"%s"' % f.replace('"', '""') for f in forms) if forms else ""
 
-    def query_corpus(db, table, is_book):
+    def query_corpus(db, table, media_type):
         if db is None:
             return []
         res = []
@@ -405,22 +477,24 @@ def api_locate():
                 tuple(texts)).fetchall()
         out = []
         for r in res:
-            title = format_book_title(r["file"], db) if is_book else get_formatted_title(db, r["file"])
+            title = title_of(media_type, r["file"], db, db)
             out.append({
                 "rowid": r["rowid"],
                 "file": r["file"],
                 "line": r["line"],
                 "clean_text": r["clean_text"],
                 "title": title,
-                "media_type": "epub" if is_book else "subs"
+                "media_type": media_type
             })
         return out
 
     rows = []
-    if media_req != "epub" and db_subs is not None:
-        rows.extend(query_corpus(db_subs, "subtitles", False))
-    if media_req != "subs" and db_epub is not None:
-        rows.extend(query_corpus(db_epub, "epubs", True))
+    if media_req in ("", "all", "subs") and db_subs is not None:
+        rows.extend(query_corpus(db_subs, "subtitles", "subs"))
+    if media_req in ("", "all", "epub") and db_epub is not None:
+        rows.extend(query_corpus(db_epub, "epubs", "epub"))
+    if media_req in ("", "all", "manga") and db_manga is not None:
+        rows.extend(query_corpus(db_manga, "manga", "manga"))
 
     rows.sort(key=lambda r: len(r.get("clean_text") or ""))
     return jsonify({"rows": rows[:500]})
@@ -430,13 +504,15 @@ def api_relocate():
     _require_page()
     items = (request.get_json(silent=True) or {}).get("items", [])[:5000]
     db_subs, db_epub = get_db()
+    db_manga = get_manga_db()
     from engine import get_tagger
     tokenizer_obj, mode = get_tagger()
     ruby = re.compile(r'｜?([^()\s　（）]+)[（(][^()（）]*[)）]')
     out = []
     for it in items:
         is_book = it.get("media_type") == "epub"
-        db, table = (db_epub, "epubs") if is_book else (db_subs, "subtitles")
+        db, table = {"epub": (db_epub, "epubs"), "manga": (db_manga, "manga")}.get(
+            it.get("media_type"), (db_subs, "subtitles"))
         line, rowid, file = it.get("line") or "", it.get("rowid"), it.get("file") or ""
         if db is None or not line or rowid is None:
             out.append(None)
@@ -476,11 +552,12 @@ def _require_page():
 def api_media():
     from engine import get_media_library, media_library_status, media_page
     db_subs, db_epub = get_db()
-    status = media_library_status(db_subs, db_epub)
+    db_manga = get_manga_db()
+    status = media_library_status(db_subs, db_epub, db_manga)
     if not status["ready"]:
         return jsonify(status), 202
     folder = request.args.get("folder")
-    page = media_page(get_media_library(db_subs, db_epub),
+    page = media_page(get_media_library(db_subs, db_epub, db_manga),
                       media=request.args.get("media", "all"),
                       needle=request.args.get("q", ""),
                       offset=max(0, request.args.get("offset", 0, type=int)),
@@ -493,7 +570,7 @@ def api_media():
 @app.route("/api/library", methods=["GET"])
 def api_library():
     db_subs, db_epub = get_db()
-    return jsonify({**library.describe(db_subs, db_epub), "folder_picker": folder_picker.available(),
+    return jsonify({**library.describe(db_subs, db_epub, get_manga_db()), "folder_picker": folder_picker.available(),
                     "search_cache": _search_cache_facts()})
 
 
@@ -533,8 +610,13 @@ def api_activity_dismiss():
 @app.route("/api/library/outdated", methods=["GET"])
 def api_library_outdated():
     db_subs, db_epub = get_db()
+    db_manga = get_manga_db()
     return jsonify({"subs_outdated": outdated_sources(db_subs, "subs"),
-                    "books_outdated": outdated_sources(db_epub, "epub")})
+                    "books_outdated": outdated_sources(db_epub, "epub"),
+                    "manga_outdated": outdated_sources(db_manga, "manga"),
+                    "subs_tables": missing_tables(db_subs, "subs"),
+                    "books_tables": missing_tables(db_epub, "epub"),
+                    "manga_tables": missing_tables(db_manga, "manga")})
 
 
 @app.route("/api/library", methods=["POST"])
@@ -546,15 +628,45 @@ def api_library_set():
         if error:
             return jsonify({"error": error}), 400
         return jsonify({"ok": True, "old_kept": old_kept})
-    if "port" in body:
+    if "media" in body:
+        error = library.set_media(body.get("media") if isinstance(body.get("media"), dict) else {})
+    elif "port" in body:
         error = library.set_port(body.get("port"))
         if not error and not os.environ.get("AOBANA_PORT"):
             library.save_profile_handoff(int(str(body["port"]).strip()), PORT, body.get("profile"))
     else:
-        error = library.set_folders(body.get("subs_dir"), body.get("books_dir"))
+        error = library.set_folders(body.get("subs_dir"), body.get("books_dir"), body.get("manga_dir"))
     if error:
         return jsonify({"error": error}), 400
     return jsonify({"ok": True})
+
+
+@app.route("/api/setup", methods=["POST"])
+def api_setup():
+    _require_page()
+    body = request.get_json(silent=True) or {}
+    media = body.get("media") if isinstance(body.get("media"), dict) else {}
+    error = library.finish_setup(media, body.get("subs_dir"), body.get("books_dir"), body.get("manga_dir"),
+                                 fresh=not body.get("upgrade"))
+    if error:
+        return jsonify({"error": error}), 400
+    return jsonify({"ok": True})
+
+
+@app.route("/api/setup/seen", methods=["POST"])
+def api_setup_seen():
+    _require_page()
+    library.mark_media_asked()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/library/drop", methods=["POST"])
+def api_library_drop():
+    _require_page()
+    error, kept = library.drop_index((request.get_json(silent=True) or {}).get("which"))
+    if error:
+        return jsonify({"error": error}), 400
+    return jsonify({"ok": True, "kept": kept})
 
 
 @app.route("/api/profile-handoff", methods=["POST"])
@@ -584,13 +696,21 @@ def api_library_open():
 def api_library_pick():
     _require_page()
     body = request.get_json(silent=True) or {}
-    start = {"subs": paths.subs_dir, "books": paths.books_dir, "data": paths.db_dir}.get(body.get("which"))
+    start = {"subs": paths.subs_dir, "books": paths.books_dir, "manga": paths.manga_dir,
+             "data": paths.db_dir}.get(body.get("which"))
     try:
         start = start() if start else None
     except Exception:
         start = None
     status, path = folder_picker.pick(start, str(body.get("title") or "")[:200])
     return jsonify({"status": status, "path": path})
+
+
+@app.route("/api/library/check-asked", methods=["POST"])
+def api_library_check_asked():
+    _require_page()
+    library.mark_check_asked()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/library/analyse", methods=["POST"])
@@ -651,8 +771,9 @@ def api_index_start():
     _require_page()
     body = request.get_json(silent=True) or {}
     only = body.get("only")
-    started = library.start_indexing(only if only in ("subs", "epub") else None, bool(body.get("outdated")))
-    return jsonify({"started": started, **library.index_status()})
+    started = library.start_indexing(only if only in ("subs", "epub", "manga") else None, bool(body.get("outdated")),
+                                     tables=bool(body.get("tables")))
+    return jsonify({**library.index_status(), "started": started is True, "nothing": started == "nothing"})
 
 
 @app.route("/api/index/stop", methods=["POST"])

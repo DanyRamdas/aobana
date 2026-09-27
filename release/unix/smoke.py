@@ -1,5 +1,5 @@
 """Start a built Aobana the way a user does, index a tiny library through the Library tab's API,
-and search it. Exit 0 only if both the subtitle and the book come back.
+and search it. Exit 0 only if the subtitle, the book and the manga line all come back.
 
     python release/unix/smoke.py <command that starts Aobana> [args...]
 
@@ -21,6 +21,7 @@ PORT = 5095
 BASE = f"http://127.0.0.1:{PORT}"
 SRT_LINE = "猫が屋根の上で昼寝をしている"
 BOOK_LINE = "図書館で古い地図を見つけた。"
+MANGA_LINES = ["その傘は誰のだ？", "駅前で拾ったんだ．．．"]
 
 
 def make_library(root):
@@ -49,7 +50,15 @@ def make_library(root):
                    '<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml">'
                    f"<head><title>一</title></head><body><p>{BOOK_LINE}</p>"
                    "<p>それは祖父のものだった。</p></body></html>")
-    return subs, books
+    manga = os.path.join(root, "media", "漫画")
+    os.makedirs(os.path.join(manga, "テスト漫画"))
+    page = {"img_width": 1000, "img_height": 1500, "blocks": [
+        {"box": [700, 100, 760, 400], "vertical": True, "lines": [MANGA_LINES[0]]},
+        {"box": [300, 100, 360, 400], "vertical": True, "lines": [MANGA_LINES[1]]}]}
+    with open(os.path.join(manga, "テスト漫画", "テスト漫画 01.mokuro"), "w", encoding="utf-8") as fh:
+        json.dump({"version": "0.2.5", "title": "テスト漫画", "volume": "テスト漫画 01",
+                   "pages": [dict(page, img_path="001.jpg")]}, fh, ensure_ascii=False)
+    return subs, books, manga
 
 
 def get(path, timeout=10):
@@ -79,9 +88,9 @@ def wait_for(what, check, timeout):
 
 def main(cmd):
     root = tempfile.mkdtemp(prefix="aobana-smoke-")
-    subs, books = make_library(root)
+    subs, books, manga = make_library(root)
     env = dict(os.environ, HOME=os.path.join(root, "home"), AOBANA_DATA_DIR=os.path.join(root, "data"),
-               SUBS_ROOT_DIR=subs, EPUB_ROOT_DIR=books, AOBANA_PORT=str(PORT), AOBANA_DEBUG="0",
+               SUBS_ROOT_DIR=subs, EPUB_ROOT_DIR=books, MANGA_ROOT_DIR=manga, AOBANA_PORT=str(PORT), AOBANA_DEBUG="0",
                AOBANA_NO_TERMINAL="1", BROWSER="true", PYTHONIOENCODING="utf-8")
     os.makedirs(env["HOME"])
     log = open(os.path.join(root, "server.log"), "w", encoding="utf-8")
@@ -100,13 +109,15 @@ def main(cmd):
         q = urllib.request.quote
         subs_hits = get(f"/api/search?q={q('昼寝')}&media=subs")["results"]
         book_hits = get(f"/api/search?q={q('地図')}&media=epub")["results"]
-        print(f"smoke: 昼寝 -> {len(subs_hits)} subtitle line(s), 地図 -> {len(book_hits)} book sentence(s)")
+        manga_hits = get(f"/api/search?q={q('傘')}&media=manga")["results"]
+        print(f"smoke: 昼寝 -> {len(subs_hits)} subtitle line(s), 地図 -> {len(book_hits)} book sentence(s), "
+              f"傘 -> {len(manga_hits)} manga line(s)")
         update = wait_for("the update check", lambda: (lambda u: u if u.get("checked") else None)(
             get("/api/update")), 30)
         print(f"smoke: /api/update current {update['current']}, latest {update['latest']}")
         page = urllib.request.urlopen(BASE + "/", timeout=10).read().decode("utf-8")
-        ok = bool(subs_hits) and bool(book_hits) and "露草" in page
-        stray = [n for n in ("subs.db", "epub.db")
+        ok = bool(subs_hits) and bool(book_hits) and bool(manga_hits) and "露草" in page
+        stray = [n for n in ("subs.db", "epub.db", "manga.db")
                  if not os.path.exists(os.path.join(env["AOBANA_DATA_DIR"], "db", n))]
         if stray:
             print(f"smoke: {stray} not in the data folder's db folder: the build does not use the installed layout")

@@ -40,9 +40,9 @@ def _file_fingerprint(path):
     return tuple(entry)
 
 
-def get_db_total(db_subs, db_epub, media='all'):
+def get_db_total(db_subs, db_epub, media='all', db_manga=None):
     global GLOBAL_DB_TOTALS
-    key = (media, db_fingerprint(db_subs, db_epub))
+    key = (media, db_fingerprint(db_subs, db_epub, db_manga))
     if key in GLOBAL_DB_TOTALS:
         return GLOBAL_DB_TOTALS[key]
     lib = _media_library_cached(key[1])
@@ -62,6 +62,11 @@ def get_db_total(db_subs, db_epub, media='all'):
             total += count_rows(db_epub, "epubs")
         except Exception:
             pass
+    if media in ('all', 'manga') and db_manga is not None:
+        try:
+            total += count_rows(db_manga, "manga")
+        except Exception:
+            pass
 
     GLOBAL_DB_TOTALS[key] = total
     return total
@@ -76,40 +81,106 @@ def get_tagger():
 
 from utils import (
     KANA_RE, KANJI_CHARS, KANJI_PATTERN,
-    ALPHA_CHARS, ALPHA_PATTERN, RUBY_BASE_RE, RUBY_RE, ruby_re_for,
+    ALPHA_CHARS, ALPHA_PATTERN, RUBY_BASE_RE, RUBY_RE, BOOK_RUBY_RE, ruby_re_for,
     SPACED_RUBY_PREV_RE, build_ruby_lexicon, ruby_reading, split_spaced_ruby,
+    has_ruby_lexicon, work_folder,
     load_ruby_decisions, load_ruby_merges, load_ruby_trims, ruby_merge_key,
     GlossRuby, count_rows, DISPLAY_PUNCT_RE, DISPLAY_NONWORD_RE, has_line_lengths, sudachi_pieces,
 )
 
 _RUBY_LEXICON = None
 _RUBY_LEXICON_LOCK = threading.Lock()
+_LEXICON_GEN = [0]
+_LEXICON_LOCAL = threading.local()
+_LEXICON_OPEN = {}
+_LEXICON_OPEN_LOCK = threading.Lock()
+_LEXICON_MEMO_MAX = 50_000
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 import paths
-_DB_PATHS = (('subs', paths.subs_db, 'subtitles'), ('epub', paths.epub_db, 'epubs'))
+_DB_PATHS = (('subs', paths.subs_db, 'subtitles'), ('epub', paths.epub_db, 'epubs'),
+             ('manga', paths.manga_db, 'manga'))
 
 
 def work_key(media: str, file: str) -> tuple:
-    return (media, file.split('\\', 1)[0])
+    return (media, work_folder(file))
 
 
 def get_ruby_lexicon():
     global _RUBY_LEXICON
+    lexicon = _RUBY_LEXICON
+    if lexicon is not None:
+        return lexicon
     with _RUBY_LEXICON_LOCK:
-        if _RUBY_LEXICON is None:
-            rows = []
-            for media, db_path, table in _DB_PATHS:
-                path = db_path()
-                if not os.path.exists(path):
-                    continue
-                conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-                try:
-                    rows += [(work_key(media, f), line) for f, line in conn.execute(
-                        f"SELECT file, line FROM {table} WHERE instr(line, ?) > 0", ('(',))]
-                finally:
-                    conn.close()
-            _RUBY_LEXICON = build_ruby_lexicon(rows)
-    return _RUBY_LEXICON
+        if _RUBY_LEXICON is not None:
+            return _RUBY_LEXICON
+        gen = _LEXICON_GEN[0]
+        rows = []
+        for media, db_path, table in _DB_PATHS:
+            path = db_path()
+            if not os.path.exists(path):
+                continue
+            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            try:
+                rows += [(work_key(media, f), line) for f, line in conn.execute(
+                    f"SELECT file, line FROM {table} WHERE instr(line, ?) > 0", ('(',))]
+            finally:
+                conn.close()
+        lexicon = build_ruby_lexicon(rows)
+        if gen == _LEXICON_GEN[0]:
+            _RUBY_LEXICON = lexicon
+        return lexicon
+
+
+def _lexicon_tables():
+    local = _LEXICON_LOCAL
+    if getattr(local, 'gen', None) != _LEXICON_GEN[0]:
+        for conn in (getattr(local, 'conns', None) or {}).values():
+            conn.close()
+        conns, complete = {}, True
+        for media, db_path, _ in _DB_PATHS:
+            path = db_path()
+            if not os.path.exists(path):
+                continue
+            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
+            conns[media] = conn
+            complete = complete and has_ruby_lexicon(conn)
+        local.conns, local.complete, local.memo, local.gen = conns, complete, {}, _LEXICON_GEN[0]
+        thread = threading.current_thread()
+        with _LEXICON_OPEN_LOCK:
+            _LEXICON_OPEN[thread] = conns
+    return local.conns if local.complete else None
+
+
+def _close_ended_lexicon_tables():
+    with _LEXICON_OPEN_LOCK:
+        ended = [thread for thread in _LEXICON_OPEN if not thread.is_alive()]
+        closing = [_LEXICON_OPEN.pop(thread) for thread in ended]
+    for conns in closing:
+        for conn in conns.values():
+            conn.close()
+
+
+def warm_ruby_lexicon():
+    if _lexicon_tables() is None:
+        get_ruby_lexicon()
+
+
+def _lexicon_lookup(conns, media, folder, word):
+    memo = _LEXICON_LOCAL.memo
+    key = (media, folder, word)
+    if key not in memo:
+        if len(memo) > _LEXICON_MEMO_MAX:
+            memo.clear()
+        own = set()
+        if media in conns:
+            own = {r for (r,) in conns[media].execute(
+                "SELECT DISTINCT reading FROM ruby_lexicon WHERE base = ? AND folder = ?", (word, folder))}
+        corpus = set()
+        for conn in conns.values():
+            corpus.update(r for (r,) in conn.execute(
+                "SELECT DISTINCT reading FROM ruby_lexicon WHERE base = ?", (word,)))
+        memo[key] = (own, corpus)
+    return memo[key]
 
 
 _SUDACHI_READINGS = {}
@@ -124,13 +195,23 @@ def _sudachi_reading(word: str) -> str:
 
 
 def ruby_evidence(work):
-    by_work, corpus = get_ruby_lexicon()
+    conns = _lexicon_tables()
+    if conns is None:
+        by_work, corpus = get_ruby_lexicon()
+
+        def readings(word):
+            return by_work.get((work, word), set()), corpus.get(word, set())
+    else:
+        media, folder = work if work else (None, None)
+
+        def readings(word):
+            return _lexicon_lookup(conns, media, folder, word)
 
     def evidence(word):
-        own = by_work.get((work, word), set())
+        own, anywhere = readings(word)
         for r in sorted(own):
             yield r, 0
-        for r in sorted(corpus.get(word, set()) - own):
+        for r in sorted(anywhere - own):
             yield r, 1
         s = _sudachi_reading(word)
         if s and s != word:
@@ -138,12 +219,7 @@ def ruby_evidence(work):
     return evidence
 
 
-RUBY_DECISIONS_PATH = paths.data_file('ruby', 'ruby_decisions.tsv')
-RUBY_MERGES_PATH = paths.data_file('ruby', 'ruby_dict_merge.tsv')
-RUBY_WHOLE_PATH = paths.data_file('ruby', 'ruby_whole.tsv')
-RUBY_TRIM_PATH = paths.data_file('ruby', 'ruby_trim.tsv')
-GLOSS_RUBY_PATH = paths.data_file('ruby', 'gloss_ruby.tsv')
-GLOSS_NAMES_PATH = paths.data_file('ruby', 'gloss_names.tsv')
+RUBY_TABLES_PATH = paths.RUBY_TABLES_PATH
 
 _RUBY_DECISIONS = None
 
@@ -151,7 +227,8 @@ _RUBY_DECISIONS = None
 def ruby_decisions() -> dict:
     global _RUBY_DECISIONS
     if _RUBY_DECISIONS is None:
-        _RUBY_DECISIONS = {**load_ruby_decisions(GLOSS_NAMES_PATH), **load_ruby_decisions(RUBY_DECISIONS_PATH)}
+        _RUBY_DECISIONS = {**load_ruby_decisions(RUBY_TABLES_PATH, 'gloss_names'),
+                           **load_ruby_decisions(RUBY_TABLES_PATH, 'ruby_decisions')}
     return _RUBY_DECISIONS
 
 def spaced_ruby_split(prev, base, furi, work):
@@ -445,7 +522,7 @@ _RUBY_MERGES = None
 def merge_dict_ruby(clean_text: str, spans: list) -> list:
     global _RUBY_MERGES
     if _RUBY_MERGES is None:
-        _RUBY_MERGES = load_ruby_merges(RUBY_MERGES_PATH)
+        _RUBY_MERGES = load_ruby_merges(RUBY_TABLES_PATH, 'ruby_dict_merge')
     if len(spans) < 2 or not _RUBY_MERGES:
         return spans
 
@@ -475,12 +552,12 @@ _RUBY_TRIMS = None
 def ruby_base_trim(base: str, furi: str) -> int:
     global _RUBY_WHOLE, _RUBY_TRIMS
     if _RUBY_TRIMS is None:
-        _RUBY_TRIMS = load_ruby_trims(RUBY_TRIM_PATH)
+        _RUBY_TRIMS = load_ruby_trims(RUBY_TABLES_PATH)
     key = (base, ruby_merge_key(furi))
     if key in _RUBY_TRIMS:
         return _RUBY_TRIMS[key]
     if _RUBY_WHOLE is None:
-        _RUBY_WHOLE = load_ruby_merges(RUBY_WHOLE_PATH)
+        _RUBY_WHOLE = load_ruby_merges(RUBY_TABLES_PATH, 'ruby_whole')
     if key in _RUBY_WHOLE:
         return 0
     hfuri = katakana_to_hiragana(furi)
@@ -554,7 +631,7 @@ def gloss_span(base: str, gloss: str, okuri: str = ""):
     if not _GLOSS_KANA_RE.fullmatch(gloss):
         return None
     if _GLOSS_RUBY is None:
-        _GLOSS_RUBY = load_ruby_merges(GLOSS_RUBY_PATH)
+        _GLOSS_RUBY = load_ruby_merges(RUBY_TABLES_PATH, 'gloss_ruby')
     if _GLOSS_DECIDED is None:
         _GLOSS_DECIDED = frozenset((b, r) for _, b, r in ruby_decisions())
     key, bare = ruby_merge_key(gloss), re.sub(r'[ 　]', '', gloss)
@@ -584,7 +661,9 @@ _BOOK_DISPLAY_RUBY = GlossRuby(_accept_gloss)
 
 
 def display_ruby_re(media: str):
-    return _BOOK_DISPLAY_RUBY if media == 'epub' else RUBY_RE
+    if media == 'epub':
+        return _BOOK_DISPLAY_RUBY
+    return BOOK_RUBY_RE if media == 'manga' else RUBY_RE
 
 
 _TOKEN_PAREN_RE = re.compile(r'(?<=.)[（(]')
@@ -911,6 +990,7 @@ def to_fullwidth(num_str, pad=1):
 
 GLOBAL_TITLES = {}
 GLOBAL_BOOK_TITLES = {}
+GLOBAL_MANGA_TITLES = {}
 
 def get_formatted_title(db_conn, relpath):
     global GLOBAL_TITLES
@@ -1359,12 +1439,50 @@ def format_book_title(file_key, db_epub=None):
     GLOBAL_BOOK_TITLES[file_key] = res
     return res
 
+_MANGA_AUTHOR_TAG_RE = re.compile(r'^\s*[\[［【][^\]］】]*[\]］】]\s*')
+
+
+def format_manga_title(file_key):
+    if file_key in GLOBAL_MANGA_TITLES:
+        return GLOBAL_MANGA_TITLES[file_key]
+    series, _, volume = file_key.partition("\\")
+    volume = _MANGA_AUTHOR_TAG_RE.sub('', volume.replace('_', ' ')).strip() or volume
+    res = f"{series}｜{volume}" if volume else series
+    GLOBAL_MANGA_TITLES[file_key] = res
+    return res
+
+
+def title_of(media_type, file, db_subs=None, db_epub=None):
+    if media_type == "epub":
+        return format_book_title(file, db_epub=db_epub)
+    if media_type == "manga":
+        return format_manga_title(file)
+    return get_formatted_title(db_subs, file)
+
+
+def add_manga_pages(rows, db_manga):
+    rowids = [r["rowid"] for r in rows if r.get("media_type") == "manga"]
+    if not rowids or db_manga is None:
+        return
+    pages = {}
+    try:
+        for j in range(0, len(rowids), 500):
+            part = rowids[j:j + 500]
+            pages.update(db_manga.execute(
+                f"SELECT rowid, page FROM manga_pages WHERE rowid IN ({','.join('?' * len(part))})", part).fetchall())
+    except sqlite3.Error:
+        return
+    for r in rows:
+        if r.get("media_type") == "manga" and r["rowid"] in pages:
+            r["page"] = pages[r["rowid"]]
+
+
 RESULT_CACHE_ENABLED = True
 RESULT_CACHE_MAX_ROWS = 4_000_000
 _RESULT_CACHE = OrderedDict()
 _RESULT_CACHE_LOCK = threading.Lock()
-_MEDIA_CODES = {"subs": 0, "epub": 1}
-_MEDIA_NAMES = ("subs", "epub")
+_MEDIA_CODES = {"subs": 0, "epub": 1, "manga": 2}
+_MEDIA_NAMES = ("subs", "epub", "manga")
 
 
 def _result_folder(media_type, file):
@@ -1701,17 +1819,19 @@ def _result_flight_release(held):
             ev.set()
 
 
-SEARCH_COST = {"subtitles": 20e-6, "epubs": 16e-6, "pass": 0.0, "like": 0.6e-6, "fixed": 0.5}
+SEARCH_COST = {"subtitles": 20e-6, "epubs": 16e-6, "manga": 20e-6, "pass": 0.0, "like": 0.6e-6, "fixed": 0.5}
 _SEARCH_PROGRESS = {}
 _SEARCH_PROGRESS_LOCK = threading.Lock()
 
 
-def _search_targets(db_subs, db_epub, media):
+def _search_targets(db_subs, db_epub, media, db_manga=None):
     targets = []
     if media in ('all', 'subs') and db_subs is not None:
         targets.append(('subtitles', db_subs, 'subs'))
     if media in ('all', 'epub') and db_epub is not None:
         targets.append(('epubs', db_epub, 'epub'))
+    if media in ('all', 'manga') and db_manga is not None:
+        targets.append(('manga', db_manga, 'manga'))
     if not targets and db_subs is not None:
         targets.append(('subtitles', db_subs, 'subs'))
     return targets
@@ -1723,17 +1843,17 @@ def _learn_cost(name, seconds, rows):
 
 
 def search_progress(db_subs, db_epub, q, sort="recommended", seed=None, media="all", exact=False,
-                    folder=None, file=None):
+                    folder=None, file=None, db_manga=None):
     import time
     key = _result_cache_key(q, sort, seed, media, exact, None if q else folder, file,
-                            _search_targets(db_subs, db_epub, media))
+                            _search_targets(db_subs, db_epub, media, db_manga))
     with _SEARCH_PROGRESS_LOCK:
         p = _SEARCH_PROGRESS.get(key)
     if p is None:
         return {"running": False}
     now = time.monotonic()
     if p.get("expected_rows") is None:
-        conns = {"subtitles": db_subs, "epubs": db_epub}
+        conns = {"subtitles": db_subs, "epubs": db_epub, "manga": db_manga}
         rows = {}
         for table, sql, params in p["counts"]:
             conn = conns.get(table)
@@ -1769,12 +1889,12 @@ def search_progress(db_subs, db_epub, q, sort="recommended", seed=None, media="a
             "remaining": round(sql_left + pass_left + SEARCH_COST["fixed"], 1)}
 
 
-def get_search_results(db, q, folders=None, sort='recommend', folder=None, exact=False, abort_flag=None, limit=500, offset=0, file=None, db_epub=None, media='all', seed=None):
+def get_search_results(db, q, folders=None, sort='recommend', folder=None, exact=False, abort_flag=None, limit=500, offset=0, file=None, db_epub=None, media='all', seed=None, db_manga=None):
     held = []
     progress = []
     try:
         return _search_results(db, q, folders, sort, folder, exact, abort_flag, limit, offset,
-                               file, db_epub, media, seed, held, progress)
+                               file, db_epub, media, seed, held, progress, db_manga)
     finally:
         with _SEARCH_PROGRESS_LOCK:
             for key in progress:
@@ -1782,7 +1902,7 @@ def get_search_results(db, q, folders=None, sort='recommend', folder=None, exact
         _result_flight_release(held)
 
 
-def _search_results(db, q, folders, sort, folder, exact, abort_flag, limit, offset, file, db_epub, media, seed, held, progress=None):
+def _search_results(db, q, folders, sort, folder, exact, abort_flag, limit, offset, file, db_epub, media, seed, held, progress=None, db_manga=None):
     import time
     neg_info = []
     clean_q = ""
@@ -1795,13 +1915,15 @@ def _search_results(db, q, folders, sort, folder, exact, abort_flag, limit, offs
         db_subs = db[0] if len(db) > 0 else None
         if len(db) > 1 and db_epub is None:
             db_epub = db[1]
+        if len(db) > 2 and db_manga is None:
+            db_manga = db[2]
     else:
         db_subs = db
 
     if db_epub is not None:
         load_book_authors(db_epub)
 
-    targets = _search_targets(db_subs, db_epub, media)
+    targets = _search_targets(db_subs, db_epub, media, db_manga)
 
     if isinstance(folder, (list, tuple)):
         folder_set = {f for f in folder if f} or None
@@ -1828,6 +1950,10 @@ def _search_results(db, q, folders, sort, folder, exact, abort_flag, limit, offs
                         f_name = title if title else (r["relpath"][:-5] if r["relpath"].lower().endswith(".epub") else r["relpath"])
                         all_folders_set.add(f_name)
                         folder_map[f_name] = (table_name, db_conn, m_type)
+                elif m_type == 'manga':
+                    for r in db_conn.execute("SELECT DISTINCT title FROM sources"):
+                        all_folders_set.add(r["title"])
+                        folder_map[r["title"]] = (table_name, db_conn, m_type)
                 else:
                     cur = db_conn.execute("SELECT relpath FROM sources")
                     for r in cur:
@@ -1902,20 +2028,17 @@ def _search_results(db, q, folders, sort, folder, exact, abort_flag, limit, offs
                 row_dict["folder"] = folder
                 row_dict["score"] = 1.0
                 row_dict["char_count"] = calculate_display_length(row_dict["line"], target_media)
-                if target_media == 'epub':
-                    row_dict["title"] = format_book_title(row_dict["file"], db_epub=db_epub)
-                else:
-                    row_dict["title"] = get_formatted_title(target_db, row_dict["file"])
-                    
+                row_dict["title"] = title_of(target_media, row_dict["file"], target_db, db_epub)
                 line = row_dict["line"]
                 row_dict["display_line"] = highlight_and_furigana(line, [], "", mark=False, bold=False, work=work_key(target_media, row_dict["file"]))
                 results.append(row_dict)
+            add_manga_pages(results, db_manga)
 
             has_more = (offset + len(rows)) < total_in_folder
-            db_total = get_db_total(db_subs, db_epub, media)
+            db_total = get_db_total(db_subs, db_epub, media, db_manga)
             return results, global_counts, db_total, all_folders, has_more
         except sqlite3.OperationalError:
-            db_total = get_db_total(db_subs, db_epub, media)
+            db_total = get_db_total(db_subs, db_epub, media, db_manga)
             return [], global_counts, db_total, all_folders, False
     else:
         pos_q, neg_terms = split_negated_terms(q)
@@ -2137,32 +2260,31 @@ def _search_results(db, q, folders, sort, folder, exact, abort_flag, limit, offs
         if abort_flag and abort_flag[0]:
             return [], {}, 0, [], False
             
-        if row_dict.get("media_type") == "epub":
-            row_dict["title"] = format_book_title(row_dict["file"], db_epub=db_epub)
-        else:
-            row_dict["title"] = get_formatted_title(db_subs, row_dict["file"])
-            
+        row_dict["title"] = title_of(row_dict.get("media_type"), row_dict["file"], db_subs, db_epub)
         line = row_dict["line"]
         row_dict["display_line"] = highlight_and_furigana(line, content_bases, clean_q, mark=False, bold=True, base_groups=base_groups, readings=readings, work=work_key(row_dict.get("media_type") or "subs", row_dict["file"]))
         results.append(row_dict)
+    add_manga_pages(results, db_manga)
 
     if q:
         global_counts = folder_counts
         all_folders = sorted(global_counts.keys(), key=lambda f: global_counts[f], reverse=True)
         global_total = sum(global_counts.values())
     else:
-        global_total = get_db_total(db_subs, db_epub, media)
+        global_total = get_db_total(db_subs, db_epub, media, db_manga)
     has_more = (offset + limit) < n_valid
     return results, global_counts, global_total, all_folders, has_more
 
 
 def reset_caches():
     global _RUBY_LEXICON
-    with _RUBY_LEXICON_LOCK:
-        _RUBY_LEXICON = None
+    _LEXICON_GEN[0] += 1
+    _RUBY_LEXICON = None
+    _close_ended_lexicon_tables()
     GLOBAL_BOOK_TITLES.clear()
     GLOBAL_BOOK_AUTHORS.clear()
     GLOBAL_TITLES.clear()
+    GLOBAL_MANGA_TITLES.clear()
 
 
 _MEDIA_LIBRARY = {}
@@ -2174,8 +2296,8 @@ def _library_sort_key(name):
     return utils.katakana_to_hiragana(name).replace('ゔ', 'う').lower().encode('shift_jis', errors='ignore')
 
 
-def get_media_library(db_subs, db_epub):
-    key = db_fingerprint(db_subs, db_epub)
+def get_media_library(db_subs, db_epub, db_manga=None):
+    key = db_fingerprint(db_subs, db_epub, db_manga)
     cached = _media_library_cached(key)
     if cached is not None:
         return cached
@@ -2183,7 +2305,7 @@ def get_media_library(db_subs, db_epub):
         cached = _media_library_cached(key)
         if cached is not None:
             return cached
-        return _compute_media_library(db_subs, db_epub, key)
+        return _compute_media_library(db_subs, db_epub, key, db_manga)
 
 
 MEDIA_SECONDS_PER_GB = 3.2
@@ -2222,32 +2344,33 @@ def _db_bytes(*conns):
     return total
 
 
-def media_library_status(db_subs, db_epub):
+def media_library_status(db_subs, db_epub, db_manga=None):
     import time
-    key = db_fingerprint(db_subs, db_epub)
+    key = db_fingerprint(db_subs, db_epub, db_manga)
     if _media_library_cached(key) is not None:
         return {"ready": True}
     if _MEDIA_COMPUTE["started"] is None and not _MEDIA_LIBRARY_LOCK.locked():
         threading.Thread(target=warm_media_library, daemon=True).start()
     started = _MEDIA_COMPUTE["started"] or time.monotonic()
-    expected = _MEDIA_COMPUTE["expected"] or _media_expected_seconds(db_subs, db_epub)
+    expected = _MEDIA_COMPUTE["expected"] or _media_expected_seconds(db_subs, db_epub, db_manga)
     elapsed = time.monotonic() - started
     return {"ready": False, "elapsed": round(elapsed, 1),
             "remaining": round(max(expected - elapsed, 1.0), 1)}
 
 
-def _media_expected_seconds(db_subs, db_epub):
+def _media_expected_seconds(db_subs, db_epub, db_manga=None):
     data = _media_cache_read() or {}
     rate = data.get("seconds_per_gb") or MEDIA_SECONDS_PER_GB
-    return rate * _db_bytes(db_subs, db_epub) / 1024 ** 3
+    return rate * _db_bytes(db_subs, db_epub, db_manga) / 1024 ** 3
 
 
 def warm_media_library():
     conns = []
     try:
-        for path in (paths.subs_db(), paths.epub_db()):
+        on = paths.media_state()
+        for path, kind in ((paths.subs_db(), "subs"), (paths.epub_db(), "books"), (paths.manga_db(), "manga")):
             conns.append(sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-                         if os.path.exists(path) else None)
+                         if on[kind] and os.path.exists(path) else None)
         get_media_library(*conns)
     except Exception:
         pass
@@ -2257,18 +2380,18 @@ def warm_media_library():
                 c.close()
 
 
-def _compute_media_library(db_subs, db_epub, key):
+def _compute_media_library(db_subs, db_epub, key, db_manga=None):
     import time
     _MEDIA_COMPUTE["started"] = time.monotonic()
-    _MEDIA_COMPUTE["expected"] = _media_expected_seconds(db_subs, db_epub)
+    _MEDIA_COMPUTE["expected"] = _media_expected_seconds(db_subs, db_epub, db_manga)
     try:
-        out = _count_media_library(db_subs, db_epub)
+        out = _count_media_library(db_subs, db_epub, db_manga)
     finally:
         seconds = time.monotonic() - _MEDIA_COMPUTE["started"]
         _MEDIA_COMPUTE["started"] = _MEDIA_COMPUTE["expected"] = None
     _MEDIA_LIBRARY.clear()
     _MEDIA_LIBRARY[key] = out
-    size = _db_bytes(db_subs, db_epub)
+    size = _db_bytes(db_subs, db_epub, db_manga)
     try:
         import json
         path = _media_cache_path()
@@ -2283,7 +2406,7 @@ def _compute_media_library(db_subs, db_epub, key):
     return out
 
 
-def _count_media_library(db_subs, db_epub):
+def _count_media_library(db_subs, db_epub, db_manga=None):
     items = {}
     if db_subs is not None:
         try:
@@ -2314,6 +2437,17 @@ def _count_media_library(db_subs, db_epub):
                 it["lines"] += n
         except sqlite3.Error:
             pass
+    if db_manga is not None:
+        try:
+            lines = dict(db_manga.execute(
+                "SELECT source_id, COUNT(*) FROM manga GROUP BY source_id").fetchall())
+            for sid, series in db_manga.execute("SELECT id, title FROM sources"):
+                it = items.setdefault(("manga", series), {
+                    "media": "manga", "folder": series, "author": "", "episodes": 0, "lines": 0})
+                it["episodes"] += 1
+                it["lines"] += lines.get(sid, 0)
+        except sqlite3.Error:
+            pass
     return sorted(items.values(), key=lambda it: _library_sort_key(it["folder"]))
 
 
@@ -2328,4 +2462,5 @@ def media_page(items, media="all", needle="", offset=0, limit=0, folder=None):
     page = rows[offset:offset + limit] if limit else rows[offset:]
     return {"items": page, "total": len(rows), "has_more": offset + len(page) < len(rows),
             "shows": sum(1 for it in items if it["media"] == "subs"),
-            "books": sum(1 for it in items if it["media"] == "epub")}
+            "books": sum(1 for it in items if it["media"] == "epub"),
+            "manga": sum(1 for it in items if it["media"] == "manga")}

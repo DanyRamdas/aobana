@@ -43,20 +43,16 @@ ISCC = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Inno Setup 
 
 APP_FILES = [
     "app.py", "engine.py", "utils.py", "paths.py", "library.py", "analyser.py", "indexer.py", "epub_indexer.py",
+    "manga_indexer.py", "ass_ruby.py",
     "folder_picker.py", "updater.py",
     "index.html", "launcher.py", "Aobana.bat", "aobana.sh", "requirements.txt",
-    "data/ruby/ruby_decisions.tsv", "data/ruby/ruby_dict_merge.tsv", "data/ruby/ruby_whole.tsv",
-    "data/ruby/ruby_trim.tsv",
-    "data/ruby/gloss_ruby.tsv", "data/ruby/gloss_names.tsv",
-    "data/ruby/unclosed_ruby.tsv",
+    "data/ruby/ruby.tsv",
     "static/aobana.svg", "static/fonts/NotoSansJP.ttf", "static/fonts/OFL.txt",
 ]
 NOT_EXPORTED = {
     "data/ruby/ruby_splits.tsv": "a review list keyed by rowids of one index; the engine never reads it",
 }
-TSV_COLUMNS = {"ruby_decisions.tsv": 4, "ruby_dict_merge.tsv": 2, "ruby_whole.tsv": 2,
-               "ruby_trim.tsv": 3, "gloss_ruby.tsv": 2, "gloss_names.tsv": 4,
-               "unclosed_ruby.tsv": 3}
+TSV_COLUMNS = {"ruby.tsv": 5}
 PUBLIC_FILES = ["README.md", "README.ja.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "CHANGELOG.md"]
 REPO_ONLY = {"README.md", "README.ja.md", "requirements.txt"}
 PUBLIC_ASSETS = [f"{view}.{lang}.png" for view in ("search-night", "search-haze", "media-haze")
@@ -66,7 +62,7 @@ BUILD_FILES = ["build.py", "launcher/Aobana.cs", "launcher/make_icon.py", "insta
                "build_unix.py", "unix/aobana-mac.sh", "unix/aobana-command.sh", "unix/aobana-run.sh",
                "unix/install.sh", "unix/uninstall.sh", "unix/aobana.desktop", "unix/Info.plist",
                "unix/aobana.png", "unix/aobana.icns", "unix/smoke.py"]
-WORKFLOWS = {"github/build.yml": ".github/workflows/build.yml"}
+WORKFLOWS = {"github/build.yml": ".github/workflows/build.yml", "github/FUNDING.yml": ".github/FUNDING.yml"}
 
 
 def step(msg):
@@ -109,13 +105,24 @@ def check_whitelist():
                 if re.match(pattern, f) and rel not in listed and rel not in NOT_EXPORTED:
                     sys.exit(f"build: {rel} is not in APP_FILES - add it, or say why it stays out")
     check_imports_shipped()
+    check_ruby_merged()
+
+
+def check_ruby_merged():
+    if not os.path.isfile(os.path.join(ROOT, "data", "ruby_dev", "merge_ruby.py")):
+        return
+    sys.path.insert(0, os.path.join(ROOT, "data", "ruby_dev"))
+    import merge_ruby
+    with open(os.path.join(ROOT, "data", "ruby", "ruby.tsv"), encoding="utf-8", newline="") as f:
+        if f.read() != merge_ruby.merged_text():
+            sys.exit("build: data/ruby/ruby.tsv is stale - python data/ruby_dev/merge_ruby.py")
 
 
 def check_imports_shipped():
     with open(os.path.join(ROOT, "termux", "install.sh"), encoding="utf-8") as fh:
         m = re.search(r'^PHONE_FILES="([^"]*)"', fh.read(), re.M)
     phone = set(m.group(1).split()) if m else set()
-    seen, todo = set(), ["app.py"]
+    seen, todo = set(), ["app.py", "indexer.py", "epub_indexer.py", "manga_indexer.py", "analyser.py"]
     while todo:
         name = todo.pop()
         if name in seen:
@@ -127,9 +134,9 @@ def check_imports_shipped():
                     todo.append(mod + ".py")
     for name in sorted(seen):
         if name not in APP_FILES:
-            sys.exit(f"build: app.py needs {name}, which is not in APP_FILES")
+            sys.exit(f"build: the app needs {name}, which is not in APP_FILES")
         if name not in phone:
-            sys.exit(f"build: app.py needs {name}, which termux/install.sh's PHONE_FILES does not download")
+            sys.exit(f"build: the app needs {name}, which termux/install.sh's PHONE_FILES does not download")
 
 
 KEEP_MODULE_DOC = ("build.py", "make_icon.py", "build_unix.py", "smoke.py")
@@ -604,9 +611,9 @@ def smoke(py, exe=None, image=IMAGE):
         sys.exit(f"build: Sudachi smoke test gave {tok!r}")
     print(f"  Sudachi: {tok}")
     subprocess.run([exe, "-c", "import sys; sys.path.insert(0, sys.argv[1]); "
-                    "import paths, utils, library, indexer, epub_indexer, engine", image],
+                    "import paths, utils, library, indexer, epub_indexer, manga_indexer, engine", image],
                    check=True, env=env, cwd=cwd)
-    print("  paths, utils, library, indexer, epub_indexer, engine: import")
+    print("  paths, utils, library, indexer, epub_indexer, manga_indexer, engine: import")
     stray = [f for f in os.listdir(image) if f.endswith((".db", ".db-wal", ".db-shm", ".json"))
              or f in ("logs", "content", "aobana.installed")]
     stray += ["data/" + f for f in os.listdir(os.path.join(image, "data")) if f != "ruby"]

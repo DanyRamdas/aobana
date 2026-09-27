@@ -26,9 +26,10 @@ def get_tokenizer():
 from utils import (
     KANA_RE, KANJI_CHARS, KANJI_PATTERN,
     ALPHA_CHARS, ALPHA_PATTERN, RUBY_BASE_RE, RUBY_RE,
-    norm_relpath, INDEX_FORMAT, ensure_format_column, compact_if_worth, stop_requested, sub_relpath, write_tokenizer_meta, ruby_index_extras, parallel_map,
+    norm_relpath, INDEX_FORMAT, is_outdated, ensure_format_column, compact_if_worth, stop_requested, sub_relpath, write_tokenizer_meta, ruby_index_extras, parallel_map,
     strip_chinese_chunks, is_chinese_text, filtered_names,
     ensure_line_lengths, has_line_lengths, write_line_lengths, drop_orphan_lengths,
+    ensure_ruby_lexicon, has_ruby_lexicon, write_ruby_lexicon, drop_ruby_lexicon,
 )
 
 HTML_TAG_RE = re.compile(r'</?(?:i|b|u|s|font)[^>]*>', re.IGNORECASE)
@@ -45,7 +46,7 @@ _EXCLUDED_LOG = []
 _WAKATI_LOG = []
 _NOTES = []
 
-from utils import convert_hw_katakana, SUBS_STR_REPLACEMENTS, katakana_to_hiragana
+from utils import convert_hw_katakana, SUBS_STR_REPLACEMENTS, katakana_to_hiragana, ruby_table
 
 _RE_REPLACEMENTS = [
     (re.compile(r'＠ルビ.*?［(.+?)[｜|](.+?)］＠'), r'\1(\2)'),
@@ -65,20 +66,14 @@ def _postprocess_sentence(text: str) -> str:
     return close_unclosed_ruby(text)
 
 UNCLOSED_RUBY_RE = re.compile(r'ルビ[上下右左]?［[^［］｜\n]*｜')
-UNCLOSED_RUBY_PATH = paths.data_file('ruby', 'unclosed_ruby.tsv')
 
 def _load_unclosed_ruby():
-    if not os.path.exists(UNCLOSED_RUBY_PATH):
-        return []
     rulings = []
-    with open(UNCLOSED_RUBY_PATH, encoding='utf-8') as f:
-        next(f)
-        for row in f:
-            tag, base, reading = row.rstrip('\n').split('\t')[:3]
-            ruby = f'｜{base}({reading})'
-            if not RUBY_RE.fullmatch(ruby):
-                ruby = f'{base}（{reading}）'
-            rulings.append((tag, ruby))
+    for _, (tag, base, reading) in ruby_table(paths.RUBY_TABLES_PATH, 'unclosed_ruby'):
+        ruby = f'｜{base}({reading})'
+        if not RUBY_RE.fullmatch(ruby):
+            ruby = f'{base}（{reading}）'
+        rulings.append((tag, ruby))
     return sorted(rulings, key=lambda r: -len(r[0]))
 
 _UNCLOSED_RUBY = _load_unclosed_ruby()
@@ -100,11 +95,18 @@ def is_paren_only_line(line):
     if re.fullmatch(r'\([^)]*\)', s): return True
     return False
 
+def bar_ruby_plain(text):
+    return RUBY_RE.sub(lambda m: m.group(1) if m.group(1) else m.group(0), text)
+
+
 def smart_join(lines):
     if not lines: return ''
     result = [lines[0]]
     for prev, curr in zip(lines, lines[1:]):
         last  = prev[-1] if prev else ''
+        tail = [m for m in RUBY_RE.finditer(prev) if m.end() == len(prev) and m.group(1)]
+        if tail:
+            last = tail[-1].group(1)[-1]
         first = curr.lstrip('｜')[:1]
         if (re.match(r'[\u3040-\u30FF\u4E00-\u9FFF\w]', last)
                 and re.match(r'[\u3040-\u30FF\u4E00-\u9FFF\w]', first)
@@ -205,7 +207,10 @@ def extract_lines_grouped_by_timecode(srt_content, relpath):
         if current_timecode is not None and group_texts:
             joined = _merge_group(group_texts)
             if not is_music_only_line(joined):
-                if not lines or lines[-1] != joined:
+                if lines and bar_ruby_plain(lines[-1]) == bar_ruby_plain(joined):
+                    if len(joined) > len(lines[-1]):
+                        lines[-1] = joined
+                else:
                     lines.append(joined)
 
     for raw_line in srt_content.splitlines():
@@ -356,14 +361,21 @@ def parse_ass_events(content, stats=None):
     return events
 
 
-def ass_to_srt(content, stats=None):
+def ass_to_srt(content, stats=None, ev=None):
+    events = parse_ass_events(content, stats)
+    if any(ev['drop'] in ('ruby-small', 'ruby-style') for ev in events):
+        import ass_ruby
+        ass_ruby.attach(events, content, ev=ev, stats=stats)
     groups = {}
-    for ev in parse_ass_events(content, stats):
-        if ev['drop']:
+    for e in events:
+        if e['drop']:
             continue
-        texts = groups.setdefault((ev['start'], ev['end']), [])
-        if ev['text'] not in texts:
-            texts.append(ev['text'])
+        texts = groups.setdefault((e['start'], e['end']), [])
+        same = [n for n, t in enumerate(texts) if bar_ruby_plain(t) == bar_ruby_plain(e['text'])]
+        if not same:
+            texts.append(e['text'])
+        elif len(e['text']) > len(texts[same[0]]):
+            texts[same[0]] = e['text']
     out = []
     for n, ((start, end), texts) in enumerate(sorted(groups.items(), key=lambda kv: kv[0]), 1):
         out.append(f"{n}\n{_srt_time(start)} --> {_srt_time(end)}\n" + '\n'.join(texts) + "\n")
@@ -439,6 +451,29 @@ COMMIT_EVERY_FILES = 200
 COMMIT_EVERY_SECONDS = 20
 
 
+def build_lexicon(conn, top):
+    if top and not has_ruby_lexicon(conn):
+        print("LEXICON building the ruby lexicon table (once, reads the whole index)...", flush=True)
+    ensure_ruby_lexicon(conn, "subtitles", "subs")
+
+
+def build_tables():
+    print(f"Building the subtitle index's tables ({DB_PATH})...")
+    with sqlite3.connect(DB_PATH) as conn:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'subtitles'").fetchone() is None:
+            print("Tables ready: no subtitle index yet.")
+            return
+        top = conn.execute("SELECT rowid FROM subtitles ORDER BY rowid DESC LIMIT 1").fetchone()
+        if top and not has_line_lengths(conn):
+            print("LENGTHS building the display-length table (once, reads the whole index)...", flush=True)
+        ensure_line_lengths(conn, DB_PATH, "subtitles", "subs", paths.index_workers())
+        if stop_requested():
+            print("STOPPED", flush=True)
+            return
+        build_lexicon(conn, top)
+    print("Tables ready.")
+
+
 def run_indexer(force=False, outdated=False):
     print(f"Starting indexer on {ROOT_DIR} (force={force}, outdated={outdated})...")
     _EXCLUDED_LOG.clear()
@@ -446,6 +481,9 @@ def run_indexer(force=False, outdated=False):
     if ROOT_DIR is None:
         print("ROOT_NOT_SET subs")
         print("No subtitle folder is set (Library tab). Nothing was changed.")
+        return
+    if not paths.media_enabled("subs"):
+        print("Subtitles are off in Settings. Nothing was changed.")
         return
     if not os.path.isdir(ROOT_DIR):
         print(f"ROOT_MISSING {ROOT_DIR}")
@@ -461,6 +499,7 @@ def run_indexer(force=False, outdated=False):
             print("Force rebuild requested. Dropping existing tables...")
             conn.execute("DROP TABLE IF EXISTS subtitles")
             conn.execute("DROP TABLE IF EXISTS line_lengths")
+            conn.execute("DROP TABLE IF EXISTS ruby_lexicon")
             conn.execute("DROP TABLE IF EXISTS sources")
             conn.commit()
 
@@ -482,6 +521,7 @@ def run_indexer(force=False, outdated=False):
             print("Old database schema detected. Rebuilding FTS table...")
             conn.execute("DROP TABLE IF EXISTS subtitles")
             conn.execute("DROP TABLE IF EXISTS line_lengths")
+            conn.execute("DROP TABLE IF EXISTS ruby_lexicon")
             conn.execute("DELETE FROM sources")
 
         conn.execute('''
@@ -500,7 +540,7 @@ def run_indexer(force=False, outdated=False):
         ensure_format_column(conn)
         conn.commit()
         cur = conn.execute("SELECT id, relpath, file_hash, index_format FROM sources")
-        existing_files = {row['relpath']: {'id': row['id'], 'hash': None if outdated and row['index_format'] < INDEX_FORMAT['subs'] else row['file_hash']}
+        existing_files = {row['relpath']: {'id': row['id'], 'hash': None if outdated and is_outdated('subs', row['relpath'], row['index_format']) else row['file_hash']}
                           for row in cur}
         deleted_rows = inserted_rows = 0
         if outdated:
@@ -512,6 +552,8 @@ def run_indexer(force=False, outdated=False):
             print("LENGTHS building the display-length table (once, reads the whole index)...", flush=True)
         ensure_line_lengths(conn, DB_PATH, "subtitles", "subs", paths.index_workers())
         lengths = has_line_lengths(conn)
+        build_lexicon(conn, top)
+        lexicon = has_ruby_lexicon(conn)
         floor = top[0] if top else 0
         next_rowid = floor + 1
         replaced = []
@@ -580,6 +622,8 @@ def run_indexer(force=False, outdated=False):
                 if old:
                     deleted_rows += conn.execute("DELETE FROM subtitles WHERE source_id = ?", (old['id'],)).rowcount
                     conn.execute("DELETE FROM sources WHERE id = ?", (old['id'],))
+                    if lexicon:
+                        drop_ruby_lexicon(conn, [old['id']])
                 failed += 1
                 print(f"FAILED {relpath}: {payload}")
                 continue
@@ -594,6 +638,8 @@ def run_indexer(force=False, outdated=False):
             if old:
                 source_id = old['id']
                 replaced.append(source_id)
+                if lexicon:
+                    drop_ruby_lexicon(conn, [source_id])
                 conn.execute("UPDATE sources SET file_hash = ?, indexed_at = ?, index_format = ? WHERE id = ?",
                              (file_hash, datetime.now(), INDEX_FORMAT['subs'], source_id))
             else:
@@ -607,6 +653,8 @@ def run_indexer(force=False, outdated=False):
             ).rowcount
             if lengths:
                 write_line_lengths(conn, ((next_rowid + i, r[0]) for i, r in enumerate(rows)), "subs")
+            if lexicon:
+                write_ruby_lexicon(conn, "subs", ((source_id, relpath, r[0]) for r in rows))
             next_rowid += len(rows)
             print(f"Indexed: {relpath.encode('cp932', 'replace').decode('cp932')}")
             pending += 1
@@ -620,6 +668,8 @@ def run_indexer(force=False, outdated=False):
             source_id = existing_files[relpath]['id']
             deleted_rows += conn.execute("DELETE FROM subtitles WHERE source_id = ?", (source_id,)).rowcount
             conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+            if lexicon:
+                drop_ruby_lexicon(conn, [source_id])
             print(f"Removed {'filtered' if relpath in filtered else 'deleted'} file: {relpath}")
 
         if deleted_rows and lengths:
@@ -662,4 +712,8 @@ def run_indexer(force=False, outdated=False):
 if __name__ == "__main__":
     import sys
     force_rebuild = "--force" in sys.argv
+    if "--tables" in sys.argv:
+        if os.path.exists(DB_PATH):
+            build_tables()
+        sys.exit(0)
     run_indexer(force=force_rebuild, outdated="--outdated" in sys.argv)

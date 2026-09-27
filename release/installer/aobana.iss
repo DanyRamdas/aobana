@@ -48,10 +48,10 @@ en.MediaCaption=Media folders
 ja.MediaCaption=字幕と書籍のフォルダ
 en.MediaDescription=Where are your subtitles and books?
 ja.MediaDescription=字幕と書籍をどこに置きますか？
-en.MediaText=Aobana reads .srt / .ass subtitles and .epub books from these two folders. Keep the suggestions to create two new empty folders, or click Browse to use folders you already have. If you only have one kind, leave the other empty. You can change both later in the Library tab.%n%nInside the subtitles folder, give each show a folder of its own.
-ja.MediaText=Aobana は、この2つのフォルダにある字幕（.srt・.ass）と書籍（.epub）を読み込みます。このままにすると新しい空のフォルダを作ります。すでにあるフォルダを使う場合は「参照」から選んでください。片方しかない場合は、もう一方を空欄にしてください。どちらも後からライブラリタブで変更できます。%n%n字幕フォルダの中は、作品ごとにフォルダを分けてください。
-en.MediaTextExisting=These are the folders Aobana uses now. Keep them, or click Browse to choose others. If you only have one kind, leave the other empty. You can change both later in the Library tab.%n%nInside the subtitles folder, give each show a folder of its own.
-ja.MediaTextExisting=Aobana が現在使っているフォルダです。このままにするか、「参照」から別のフォルダを選んでください。片方しかない場合は、もう一方を空欄にしてください。どちらも後からライブラリタブで変更できます。%n%n字幕フォルダの中は、作品ごとにフォルダを分けてください。
+en.MediaText=Aobana reads .srt / .ass subtitles and .epub books from these two folders. Keep the suggestions to create two new empty folders, or click Browse to use folders you already have. If you only have one kind, leave the other empty. You can change both later in the Settings tab.%n%nInside the subtitles folder, give each show a folder of its own.
+ja.MediaText=Aobana は、この2つのフォルダにある字幕（.srt / .ass）と書籍（.epub）を読み込みます。このままにすると新しい空のフォルダを作ります。すでにあるフォルダを使う場合は「参照」から選んでください。片方しかない場合は、もう一方を空欄にしてください。どちらも後から設定タブで変更できます。%n%n字幕フォルダの中は、作品ごとにフォルダを分けてください。
+en.MediaTextExisting=These are the folders Aobana uses now. Keep them, or click Browse to choose others. If you only have one kind, leave the other empty. You can change both later in the Settings tab.%n%nInside the subtitles folder, give each show a folder of its own.
+ja.MediaTextExisting=Aobana が現在使っているフォルダです。このままにするか、「参照」から別のフォルダを選んでください。片方しかない場合は、もう一方を空欄にしてください。どちらも後から設定タブで変更できます。%n%n字幕フォルダの中は、作品ごとにフォルダを分けてください。
 en.MediaSubs=Subtitles folder:
 ja.MediaSubs=字幕フォルダ:
 en.MediaBooks=Books folder:
@@ -60,14 +60,14 @@ en.BrowseSecond=&Browse...
 ja.BrowseSecond=参照(&B)...
 en.MediaNotFull=Enter a full path, such as C:\Media\Subtitles, or leave the field empty.
 ja.MediaNotFull=C:\Media\字幕 のような完全なパスを入力するか、空欄のままにしてください。
-en.NotSet=(not set: choose it later in the Library tab)
-ja.NotSet=（未設定: 後からライブラリタブで指定できます）
+en.NotSet=(not set: choose it later in the Settings tab)
+ja.NotSet=（未設定: 後から設定タブで指定できます）
 en.StartMenuIcon=Create a &Start menu shortcut
 ja.StartMenuIcon=スタートメニューにショートカットを作成する(&S)
 en.MediaPort=Port (Aobana opens at http://127.0.0.1:<port>/):
 ja.MediaPort=ポート（Aobana は http://127.0.0.1:<ポート>/ で開きます）:
-en.PortBusy=Port %1 is already used by another program on this computer, so %2 is suggested instead. You can change it later in the Library tab.
-ja.PortBusy=ポート %1 はこのパソコンの別のプログラムが使用しているため、代わりに %2 を候補にしました。後からライブラリタブで変更できます。
+en.PortBusy=Port %1 is already used by another program on this computer, so %2 is suggested instead. You can change it later in the Settings tab.
+ja.PortBusy=ポート %1 はこのパソコンの別のプログラムが使用しているため、代わりに %2 を候補にしました。後から設定タブで変更できます。
 en.PortBad=Enter a port number from 1024 to 65535.
 ja.PortBad=ポートには 1024〜65535 の数字を入力してください。
 en.PortTaken=Port %1 is already in use by another program. Choose another number, or close that program first.
@@ -78,16 +78,16 @@ en.FinishedMedia=Subtitles folder: %1%nBooks folder: %2
 ja.FinishedMedia=字幕フォルダ: %1%n書籍フォルダ: %2
 en.FinishedMediaPerUser=Subtitles and books: each account gets its own Documents\Aobana\Subtitles and Documents\Aobana\Books folders the first time it starts Aobana.
 ja.FinishedMediaPerUser=字幕と書籍: 各アカウントの初回起動時に、そのアカウントのドキュメント\Aobana\Subtitles と ドキュメント\Aobana\Books を作ります。
-en.FinishedText=Aobana is installed.%n%n%1%nIndex: %2%nSettings: %4%3
-ja.FinishedText=Aobana のインストールが完了しました。%n%n%1%nインデックス: %2%n設定: %4%3
+en.FinishedText=Aobana is installed.%n%n%1%nDatabases: %2%nSettings: %4%3
+ja.FinishedText=Aobana のインストールが完了しました。%n%n%1%nデータベース: %2%n設定: %4%3
 en.DbCaption=Databases
 ja.DbCaption=データベースの保存先
-en.DbDescription=Where should Aobana keep its index?
-ja.DbDescription=インデックス（データベース）をどこに保存しますか？
-en.DbText=Aobana keeps its index (subs.db and epub.db) in this folder. Keep the suggestion, or choose a folder that already holds an Aobana index to use it as it is. Indexing writes here, so the folder must be writable.
-ja.DbText=Aobana はインデックス（subs.db と epub.db）をこのフォルダに保存します。このままでもかまいません。すでに Aobana のインデックスがあるフォルダを選ぶと、それをそのまま使います。インデックス作成はここに書き込むため、書き込めるフォルダを選んでください。
-en.DbFound=Found in this folder: %1. Aobana will use this index.
-ja.DbFound=このフォルダにあります: %1。このインデックスを使います。
+en.DbDescription=Where should Aobana keep its databases?
+ja.DbDescription=データベースをどこに保存しますか？
+en.DbText=Aobana keeps its databases (subs.db, epub.db and manga.db), which hold the index, in this folder. Keep the suggestion, or choose a folder that already holds Aobana databases to use them as they are. Indexing writes here, so the folder must be writable.
+ja.DbText=Aobana はインデックスを入れたデータベース（subs.db・epub.db・manga.db）をこのフォルダに保存します。このままでもかまいません。すでに Aobana のデータベースがあるフォルダを選ぶと、それをそのまま使います。インデックス作成はここに書き込むため、書き込めるフォルダを選んでください。
+en.DbFound=Found in this folder: %1. Aobana will use these databases.
+ja.DbFound=このフォルダにあります: %1。このデータベースを使います。
 en.DbNone=No databases in this folder yet: indexing creates them.
 ja.DbNone=このフォルダにはまだデータベースがありません。インデックス作成で作られます。
 en.DbNotWritable=Aobana could not write to this folder:%n%n%1%n%nIndexing needs to write there. Choose another folder.
@@ -98,16 +98,20 @@ en.RunAsAdmin=Run as &administrator
 ja.RunAsAdmin=管理者として実行(&A)
 en.DirNeedsAdmin=Setup cannot write to this folder without administrator rights:%n%n%1%n%nRestart the setup as administrator (installing for all users)?
 ja.DirNeedsAdmin=このフォルダには管理者権限がないと書き込めません:%n%n%1%n%nセットアップを管理者として再起動しますか？（すべてのユーザー用にインストールします）
+en.MediaInApp=Chosen in Aobana at its first start: the media you use, and their folders.
+ja.MediaInApp=初回起動時に Aobana の中で、使うメディアとそのフォルダを選びます。
+en.FinishedSetup=Nothing is indexed yet. Start Aobana and press "Set up Aobana" to choose what you use.
+ja.FinishedSetup=まだ何もインデックスされていません。Aobana を起動し、「Aobana を設定する」を押して使うメディアを選んでください。
 en.FinishedEmpty=Nothing is indexed yet. Put your files in the folders, then press "Index library" in the Library tab.
 ja.FinishedEmpty=まだ何もインデックスされていません。フォルダにファイルを入れてから、ライブラリタブで「インデックス作成」を押してください。
 en.FinishedReindex=The folders changed: press "Index library" in the Library tab to index them.
 ja.FinishedReindex=フォルダが変わりました。ライブラリタブで「インデックス作成」を押してください。
 en.ReadyMedia=Media folders:
-en.ReadyDb=Index (databases):
+en.ReadyDb=Databases:
 en.ReadyAddress=Aobana opens at:
 en.UninstCaption=Uninstall Aobana
 ja.ReadyMedia=字幕と書籍のフォルダ:
-ja.ReadyDb=インデックス（データベース）の保存先:
+ja.ReadyDb=データベースの保存先:
 ja.ReadyAddress=Aobana のアドレス:
 ja.UninstCaption=Aobana のアンインストール
 en.UninstHeading=Choose what to delete along with the program
@@ -116,10 +120,14 @@ ja.UninstHeading=プログラムと一緒に削除するものを選んでくだ
 ja.UninstIntro=チェックしなかったものはこのパソコンに残り、再インストールするとそのまま使われます。
 en.UninstSettings=Settings and logs
 ja.UninstSettings=設定とログ
-en.UninstIndex=The index (subs.db, epub.db)
-ja.UninstIndex=インデックス（subs.db と epub.db）
-en.UninstIndexNote=%1 (%2)%nWithout it, the library has to be indexed again.
-ja.UninstIndexNote=%1（%2）%n削除すると、ライブラリのインデックス作成をやり直す必要があります。
+en.UninstSettingsNote=%1%nSettings (config.json), logs, and the files kept for updates.
+ja.UninstSettingsNote=%1%n設定（config.json）、ログ、アップデートの一時ファイルです。
+en.UninstIndex=Databases and caches
+ja.UninstIndex=データベースとキャッシュ
+en.UninstIndexNote=%1 (%2)%nThe databases (subs.db, epub.db, manga.db), the library check's results, the files left out of the index, and the search cache. Without them, the library has to be indexed again.
+ja.UninstIndexNote=%1（%2）%nデータベース（subs.db・epub.db・manga.db）、ライブラリの点検の結果、インデックスしないファイルの一覧、検索キャッシュです。削除すると、インデックス作成をやり直す必要があります。
+en.UninstIndexNoteNoDb=%1 (%2)%nThe library check's results, the files left out of the index, and the search cache. There are no databases (subs.db, epub.db, manga.db) here.
+ja.UninstIndexNoteNoDb=%1（%2）%nライブラリの点検の結果、インデックスしないファイルの一覧、検索キャッシュです。データベース（subs.db・epub.db・manga.db）はありません。
 en.UninstSubs=The subtitles folder and everything in it
 ja.UninstSubs=字幕フォルダとその中身すべて
 en.UninstBooks=The books folder and everything in it
@@ -132,8 +140,8 @@ en.UninstKeptSubs=Subtitles: %1
 ja.UninstKeptSubs=字幕: %1
 en.UninstKeptBooks=Books: %1
 ja.UninstKeptBooks=書籍: %1
-en.UninstKeptIndex=Index: %1
-ja.UninstKeptIndex=インデックス: %1
+en.UninstKeptIndex=Databases: %1
+ja.UninstKeptIndex=データベース: %1
 en.UninstBrowser=Favorites and display settings are stored by your browser. Clearing the site data for 127.0.0.1 in the browser removes them.
 ja.UninstBrowser=お気に入りと表示設定はブラウザに保存されています。ブラウザで 127.0.0.1 のサイトデータを消去すると削除されます。
 en.UninstAll=Tick &all
@@ -158,6 +166,14 @@ Type: files; Name: "{app}\Aobana-debug.bat"
 Type: files; Name: "{app}\README.md"
 Type: files; Name: "{app}\README.ja.md"
 Type: files; Name: "{app}\requirements.txt"
+Type: files; Name: "{app}\data\ruby\ruby_decisions.tsv"
+Type: files; Name: "{app}\data\ruby\ruby_dict_merge.tsv"
+Type: files; Name: "{app}\data\ruby\ruby_whole.tsv"
+Type: files; Name: "{app}\data\ruby\ruby_trim.tsv"
+Type: files; Name: "{app}\data\ruby\gloss_ruby.tsv"
+Type: files; Name: "{app}\data\ruby\gloss_names.tsv"
+Type: files; Name: "{app}\data\ruby\unclosed_ruby.tsv"
+Type: files; Name: "{app}\data\ruby\ass_pairs.tsv"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -263,6 +279,40 @@ begin
   end;
 end;
 
+const
+  UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{dedba003-ceb5-4880-a40f-660dc88c9345}_is1';
+
+function PerUserInstalled(): Boolean;
+begin
+  Result := RegKeyExists(HKCU, UninstallKey) and
+            not RegKeyExists(HKLM64, UninstallKey) and not RegKeyExists(HKLM32, UninstallKey);
+end;
+
+function HasParam(Name: String): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount() do
+    if CompareText(ParamStr(I), Name) = 0 then
+      Result := True;
+end;
+
+function InitializeSetup(): Boolean;
+var
+  Params: String;
+  I: Integer;
+begin
+  Result := True;
+  if not IsAdminInstallMode() or HasParam('/ALLUSERS') or HasParam('/CURRENTUSER') or not PerUserInstalled() then
+    Exit;
+  Params := '/CURRENTUSER';
+  for I := 1 to ParamCount() do
+    Params := Params + ' "' + ParamStr(I) + '"';
+  if ShellExecuteW(0, 'open', ExpandConstant('{srcexe}'), Params, '', SW_SHOWNORMAL) > 32 then
+    Result := False;
+end;
+
 procedure AdminClick(Sender: TObject);
 begin
   RelaunchAsAdmin();
@@ -287,6 +337,12 @@ begin
     if Found <> '' then
       Found := Found + ', ';
     Found := Found + 'epub.db';
+  end;
+  if FileExists(Dir + 'manga.db') then
+  begin
+    if Found <> '' then
+      Found := Found + ', ';
+    Found := Found + 'manga.db';
   end;
   if Found <> '' then
     DbNote.Caption := FmtMessage(CustomMessage('DbFound'), [Found])
@@ -375,6 +431,16 @@ begin
   Result := False;
   if JsonField(Text, 'subs_dir', Subs, IsStr) then Result := True else Subs := '';
   if JsonField(Text, 'books_dir', Books, IsStr) then Result := True else Books := '';
+end;
+
+function WritesFolders(): Boolean;
+begin
+  Result := FromExisting or (ExpandConstant('{param:SUBSDIR}') <> '') or (ExpandConstant('{param:BOOKSDIR}') <> '');
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = MediaPage.ID) or (PageID = DbPage.ID);
 end;
 
 function FoldersPerAccount(): Boolean;
@@ -726,7 +792,9 @@ function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoType
   MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
 begin
   Result := MemoDirInfo + NewLine + NewLine + CustomMessage('ReadyMedia') + NewLine;
-  if FoldersPerAccount() then
+  if not WritesFolders() then
+    Result := Result + Space + CustomMessage('MediaInApp') + NewLine
+  else if FoldersPerAccount() then
     Result := Result + Space + CustomMessage('FinishedMediaPerUser') + NewLine
   else
     Result := Result + Space + CustomMessage('MediaSubs') + ' ' + Shown(Trim(MediaPage.Values[0])) + NewLine +
@@ -745,11 +813,12 @@ begin
   if CurStep <> ssPostInstall then
     Exit;
   DoPrefill();
+  CheckPort();
   if WasUpgrade and not FoldersChanged() and not DbChanged() and (PortValue() = StrToIntDef(Prefill[2], 0)) then
     Exit;
   SetArrayLength(Lines, 1);
   Lines[0] := '{"installed_at": ' + JsonString(GetDateTimeString('yyyy-mm-dd"T"hh:nn:ss', '-', ':'));
-  if not FoldersPerAccount() then
+  if WritesFolders() and not FoldersPerAccount() then
   begin
     if MediaPage.Values[0] <> '' then
       ForceDirectories(MediaPage.Values[0]);
@@ -774,7 +843,7 @@ var
   Media, Data, Tail: String;
   Delta: Integer;
 begin
-  AdminButton.Visible := not IsAdminInstallMode() and
+  AdminButton.Visible := not IsAdminInstallMode() and not PerUserInstalled() and
     ((CurPageID = wpSelectDir) or (CurPageID = MediaPage.ID) or (CurPageID = DbPage.ID) or
      (CurPageID = wpSelectTasks) or (CurPageID = wpReady));
   if CurPageID = wpSelectTasks then
@@ -785,13 +854,17 @@ begin
     ShowDbNote(nil);
   if CurPageID <> wpFinished then
     Exit;
-  if FoldersPerAccount() then
+  if not WritesFolders() then
+    Media := CustomMessage('MediaInApp') + #13#10
+  else if FoldersPerAccount() then
     Media := CustomMessage('FinishedMediaPerUser') + #13#10
   else
     Media := FmtMessage(CustomMessage('FinishedMedia'), [Shown(MediaPage.Values[0]), Shown(MediaPage.Values[1])]) + #13#10;
   Data := RemoveBackslashUnlessRoot(DbPage.Values[0]);
   Tail := '';
-  if not FileExists(Data + '\subs.db') and not FileExists(Data + '\epub.db') then
+  if not WritesFolders() then
+    Tail := #13#10#13#10 + CustomMessage('FinishedSetup')
+  else if not FileExists(Data + '\subs.db') and not FileExists(Data + '\epub.db') and not FileExists(Data + '\manga.db') then
     Tail := #13#10#13#10 + CustomMessage('FinishedEmpty')
   else if FromExisting and FoldersChanged() then
     Tail := #13#10#13#10 + CustomMessage('FinishedReindex');
@@ -812,12 +885,6 @@ var
   UOffer: array[0..3] of Boolean;
   UChosen: array[0..3] of Boolean;
   UBoxes: array[0..3] of TNewCheckBox;
-
-function IndexFiles(): TArrayOfString;
-begin
-  Result := ['subs.db', 'subs.db-wal', 'subs.db-shm', 'subs.db-journal',
-             'epub.db', 'epub.db-wal', 'epub.db-shm', 'epub.db-journal'];
-end;
 
 procedure DirStats(Dir: String; var Files: Integer; var Bytes: Int64);
 var
@@ -846,18 +913,6 @@ begin
   end;
 end;
 
-function FileBytes(Path: String): Int64;
-var
-  FR: TFindRec;
-begin
-  Result := 0;
-  if FindFirst(Path, FR) then
-  begin
-    Result := Int64(FR.SizeLow) + Int64(FR.SizeHigh) * 4294967296;
-    FindClose(FR);
-  end;
-end;
-
 function SizeText(Bytes: Int64): String;
 var
   KB: Integer;
@@ -871,26 +926,54 @@ begin
     Result := Format('%d KB', [KB]);
 end;
 
-function IndexBytes(Dir: String): Int64;
-var
-  Names: TArrayOfString;
-  I: Integer;
-begin
-  Result := 0;
-  Names := IndexFiles();
-  for I := 0 to GetArrayLength(Names) - 1 do
-    if FileExists(AddBackslash(Dir) + Names[I]) then
-      Result := Result + FileBytes(AddBackslash(Dir) + Names[I]);
-end;
-
 function HasIndex(Dir: String): Boolean;
 begin
-  Result := (Dir <> '') and (FileExists(AddBackslash(Dir) + 'subs.db') or FileExists(AddBackslash(Dir) + 'epub.db'));
+  Result := (Dir <> '') and (FileExists(AddBackslash(Dir) + 'subs.db') or FileExists(AddBackslash(Dir) + 'epub.db')
+             or FileExists(AddBackslash(Dir) + 'manga.db'));
 end;
 
 function OwnDb(): Boolean;
 begin
-  Result := SameFolder(UDb, UStore) or SameFolder(UDb, UStore + '\db');
+  Result := SameFolder(UDb, UStore + '\db');
+end;
+
+function IsEmptyDir(Dir: String): Boolean;
+var
+  Files: Integer;
+  Bytes: Int64;
+begin
+  Files := 0;
+  Bytes := 0;
+  DirStats(Dir, Files, Bytes);
+  Result := Files = 0;
+end;
+
+function DbBytes(): Int64;
+var
+  Files: Integer;
+begin
+  Files := 0;
+  Result := 0;
+  DirStats(UDb, Files, Result);
+end;
+
+function StoreHasSettings(): Boolean;
+var
+  FR: TFindRec;
+  Own: Boolean;
+begin
+  Result := False;
+  if not FindFirst(UStore + '\*', FR) then
+    Exit;
+  try
+    repeat
+      Own := (FR.Name = '.') or (FR.Name = '..') or (CompareText(FR.Name, 'db') = 0);
+      if not Own then
+        Result := True;
+    until Result or not FindNext(FR);
+  finally
+    FindClose(FR);
+  end;
 end;
 
 procedure LocateData();
@@ -903,10 +986,7 @@ begin
   Marker := ReadText(MarkerPath());
   if not (JsonField(Cfg, 'db_dir', UDb, IsStr) and IsStr and (UDb <> '')) then
     if not (JsonField(Marker, 'db_dir', UDb, IsStr) and IsStr and (UDb <> '')) then
-      if HasIndex(UStore) and not HasIndex(UStore + '\db') then
-        UDb := UStore
-      else
-        UDb := UStore + '\db';
+      UDb := UStore + '\db';
   if not ReadFolders(Cfg, S, B) then
     if not ReadFolders(Marker, S, B) then
     begin
@@ -915,8 +995,8 @@ begin
     end;
   USubs := RemoveBackslashUnlessRoot(Trim(S));
   UBooks := RemoveBackslashUnlessRoot(Trim(B));
-  UOffer[0] := FileExists(UStore + '\config.json') or DirExists(UStore + '\logs');
-  UOffer[1] := OwnDb() and HasIndex(UDb);
+  UOffer[0] := StoreHasSettings();
+  UOffer[1] := OwnDb() and not IsEmptyDir(UDb);
   UOffer[2] := IsDefaultMedia(USubs, 0) and DirExists(USubs);
   UOffer[3] := IsDefaultMedia(UBooks, 1) and DirExists(UBooks);
   Log('Uninstall data: store=' + UStore + ' db=' + UDb + ' subs=' + USubs + ' books=' + UBooks);
@@ -975,22 +1055,11 @@ begin
   Result := FmtMessage(CustomMessage('UninstFolderNote'), [Dir, IntToStr(Files), SizeText(Bytes)]);
 end;
 
-function IsEmptyDir(Dir: String): Boolean;
-var
-  Files: Integer;
-  Bytes: Int64;
-begin
-  Files := 0;
-  Bytes := 0;
-  DirStats(Dir, Files, Bytes);
-  Result := Files = 0;
-end;
-
 function ChooseRemovals(): Boolean;
 var
   Form: TSetupForm;
   Top, I, W: Integer;
-  Kept: String;
+  Kept, Note: String;
   Line: TBevel;
   AllButton, NextButton, CancelButton: TNewButton;
 begin
@@ -1000,14 +1069,20 @@ begin
     Top := AddLabel(Form, ScaleY(18), ScaleX(24), CustomMessage('UninstHeading'), False, True, ScaleY(6));
     Top := AddLabel(Form, Top, ScaleX(24), CustomMessage('UninstIntro'), False, False, ScaleY(16));
     if UOffer[0] then
-      Top := AddChoice(Form, 0, Top, CustomMessage('UninstSettings'), UStore, True);
+      Top := AddChoice(Form, 0, Top, CustomMessage('UninstSettings'),
+        FmtMessage(CustomMessage('UninstSettingsNote'), [UStore]), False);
     if UOffer[1] then
-      Top := AddChoice(Form, 1, Top, CustomMessage('UninstIndex'),
-        FmtMessage(CustomMessage('UninstIndexNote'), [UDb, SizeText(IndexBytes(UDb))]), False);
+    begin
+      if HasIndex(UDb) then
+        Note := CustomMessage('UninstIndexNote')
+      else
+        Note := CustomMessage('UninstIndexNoteNoDb');
+      Top := AddChoice(Form, 1, Top, CustomMessage('UninstIndex'), FmtMessage(Note, [UDb, SizeText(DbBytes())]), False);
+    end;
     if UOffer[2] then
-      Top := AddChoice(Form, 2, Top, CustomMessage('UninstSubs'), FolderNote(USubs), IsEmptyDir(USubs));
+      Top := AddChoice(Form, 2, Top, CustomMessage('UninstSubs'), FolderNote(USubs), False);
     if UOffer[3] then
-      Top := AddChoice(Form, 3, Top, CustomMessage('UninstBooks'), FolderNote(UBooks), IsEmptyDir(UBooks));
+      Top := AddChoice(Form, 3, Top, CustomMessage('UninstBooks'), FolderNote(UBooks), False);
     Kept := '';
     if (USubs <> '') and not UOffer[2] and DirExists(USubs) then
       Kept := Kept + #13#10 + FmtMessage(CustomMessage('UninstKeptSubs'), [USubs]);
@@ -1092,17 +1167,30 @@ var
   Code: Integer;
 begin
   App := ExpandConstant('{app}\python\');
+  if not DirExists(App) then
+    Exit;
   StringChangeEx(App, '''', '''''', True);
-  Cmd := '-NoProfile -NonInteractive -Command "Get-Process -ErrorAction SilentlyContinue | ' +
+  Cmd := '-NoProfile -NonInteractive -Command "' +
+         'Get-Process -ErrorAction SilentlyContinue | ' +
          'Where-Object { $_.Path -and $_.Path.StartsWith(''' + App + ''', ''OrdinalIgnoreCase'') } | ' +
-         'Stop-Process -Force"';
+         'Stop-Process -Force -ErrorAction SilentlyContinue; ' +
+         'for ($i = 0; $i -lt 20; $i++) { ' +
+         '  if (-not (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith(''' + App + ''', ''OrdinalIgnoreCase'') })) { break } ' +
+         '  Start-Sleep -Milliseconds 200 ' +
+         '}"';
   Log('Stopping Aobana: ' + Cmd);
   if Exec(ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe'), Cmd, '', SW_HIDE,
           ewWaitUntilTerminated, Code) then
     Log('Stop exit code ' + IntToStr(Code))
   else
     Log('Stop could not start PowerShell: ' + SysErrorMessage(Code));
-  Sleep(500);
+  Sleep(300);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopServer();
+  Result := '';
 end;
 
 procedure NoteLeft(Path: String; var Left: String);
@@ -1145,10 +1233,40 @@ begin
   DeleteFolderRetry(Dir, True);
 end;
 
+procedure DeleteSettings(var Left: String);
+var
+  FR: TFindRec;
+  Doomed: TArrayOfString;
+  I, N: Integer;
+  Own: Boolean;
+begin
+  N := 0;
+  if FindFirst(UStore + '\*', FR) then
+    try
+      repeat
+        Own := (FR.Name = '.') or (FR.Name = '..') or (CompareText(FR.Name, 'db') = 0);
+        if not Own then
+        begin
+          SetArrayLength(Doomed, N + 1);
+          Doomed[N] := AddBackslash(UStore) + FR.Name;
+          N := N + 1;
+        end;
+      until not FindNext(FR);
+    finally
+      FindClose(FR);
+    end;
+  for I := 0 to N - 1 do
+  begin
+    if DirExists(Doomed[I]) then
+      DelTree(Doomed[I], True, True, True)
+    else
+      DeleteFile(Doomed[I]);
+    NoteLeft(Doomed[I], Left);
+  end;
+end;
+
 procedure RemoveChosen();
 var
-  Names: TArrayOfString;
-  I: Integer;
   Left: String;
 begin
   Left := '';
@@ -1160,28 +1278,11 @@ begin
   else
   begin
     if UChosen[0] then
-    begin
-      DeleteFile(UStore + '\config.json');
-      DelTree(UStore + '\logs', True, True, True);
-      NoteLeft(UStore + '\config.json', Left);
-      NoteLeft(UStore + '\logs', Left);
-    end;
+      DeleteSettings(Left);
     if UChosen[1] then
     begin
-      if SameFolder(UDb, UStore + '\db') then
-      begin
-        DelTree(UDb, True, True, True);
-        NoteLeft(UDb, Left);
-      end
-      else
-      begin
-        Names := IndexFiles();
-        for I := 0 to GetArrayLength(Names) - 1 do
-        begin
-          DeleteFile(UStore + '\' + Names[I]);
-          NoteLeft(UStore + '\' + Names[I], Left);
-        end;
-      end;
+      DelTree(UDb, True, True, True);
+      NoteLeft(UDb, Left);
     end;
     RemoveDir(UStore);
   end;

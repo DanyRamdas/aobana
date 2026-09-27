@@ -197,7 +197,11 @@ def _subplz(name):
     return (m.group(1), m.group(2).lower()) if m else None
 
 
-def sub_order(names):
+def _in_folder(path):
+    return os.sep in path or bool(os.altsep and os.altsep in path)
+
+
+def sub_order(names, disk=None):
     stems = Counter()
     for n in names:
         sp = _subplz(n)
@@ -205,10 +209,11 @@ def sub_order(names):
             stems[(os.path.dirname(n), sp[0])] += 1
 
     def key(n):
+        loose = 0 if (disk is None or _in_folder(disk.get(n, n))) else 1
         sp = _subplz(n)
         if sp and stems[(os.path.dirname(n), sp[0])] >= 2:
-            return (os.path.join(os.path.dirname(n), sp[0]), SUBPLZ_RANK[sp[1]], n)
-        return (os.path.splitext(n)[0], 0, n)
+            return (loose, os.path.join(os.path.dirname(n), sp[0]), SUBPLZ_RANK[sp[1]], n)
+        return (loose, os.path.splitext(n)[0], 0, n)
     return sorted(names, key=key)
 
 
@@ -235,14 +240,14 @@ def subplz_sets(names):
     return out
 
 
-def sub_duplicates(rows):
+def sub_duplicates(rows, disk=None):
     out, dropped = [], set()
     for keep, others in subplz_sets([n for n in rows if not rows[n]["error"]]):
         for n in others:
             out.append((n, keep, 1.0, "subplz"))
             dropped.add(n)
     first = {}
-    for name in sub_order(list(rows)):
+    for name in sub_order(list(rows), disk):
         sha = rows[name]["sha"]
         if not sha or rows[name]["error"] or name in dropped:
             continue
@@ -255,18 +260,36 @@ def sub_duplicates(rows):
     for name in rows:
         if name not in dropped and not rows[name]["error"]:
             by_show[_show(name)].append(name)
+    folder_owner = {}
+    loose_left = []
     for show, names in by_show.items():
         owner = {}
-        for name in sub_order(names):
+        for name in sub_order(names, disk):
             k = _unpack(rows[name]["keys"])
             hits = Counter(owner[h] for h in k if h in owner)
             if len(k) and hits:
                 same, n = hits.most_common(1)[0]
                 if n >= DUP_SHARE * len(k):
                     out.append((name, same, n / len(k), "same_lines"))
+                    dropped.add(name)
                     continue
             for h in k:
                 owner.setdefault(h, name)
+            if disk is not None and not _in_folder(disk.get(name, name)):
+                loose_left.append(name)
+            else:
+                for h in k:
+                    folder_owner.setdefault(h, name)
+    for name in sub_order(loose_left, disk):
+        k = _unpack(rows[name]["keys"])
+        hits = Counter(folder_owner[h] for h in k if h in folder_owner)
+        if len(k) and hits:
+            same, n = hits.most_common(1)[0]
+            if n >= DUP_SHARE * len(k):
+                out.append((name, same, n / len(k), "same_lines"))
+                continue
+        for h in k:
+            folder_owner.setdefault(h, name)
     return out
 
 
@@ -318,7 +341,7 @@ def book_duplicates(rows):
     for members in groups.values():
         if len(members) < 2:
             continue
-        keep = max(members, key=lambda n: (rows[n]["n"], [-ord(c) for c in n]))
+        keep = max(members, key=lambda n: (rows[n]["n"], -int(_in_folder(n)), [-ord(c) for c in n]))
         for m in members:
             if m != keep:
                 c = share.get((m, keep)) or share.get((keep, m)) or max(
@@ -378,7 +401,7 @@ def run(only=None):
                 add(name, lang)
                 flagged.add(name)
         left = {n: r for n, r in rows.items() if n not in flagged}
-        dups = sub_duplicates(left) if media == "subs" else book_duplicates(left)
+        dups = sub_duplicates(left, disk) if media == "subs" else book_duplicates(left)
         for name, keep, share, how in dups:
             add(name, "duplicate", keep=keep, keep_path=disk[keep], share=round(share, 3), how=how)
         for keep in sorted({d[1] for d in dups}):
@@ -430,10 +453,44 @@ def _sample_one(media, path, relpath):
     return sum(len(r[1]) for r in rows), len(rows)
 
 
+def _estimate_cache_path():
+    return os.path.join(os.path.dirname(os.path.abspath(paths.subs_db())), "estimate.json")
+
+
+def _load_estimate_cache():
+    try:
+        with open(_estimate_cache_path(), encoding="utf-8") as fh:
+            doc = json.load(fh)
+        return doc if isinstance(doc, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_estimate_cache(doc):
+    try:
+        os.makedirs(os.path.dirname(_estimate_cache_path()), exist_ok=True)
+        tmp = _estimate_cache_path() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        os.replace(tmp, _estimate_cache_path())
+    except OSError:
+        pass
+
+
+def _estimate_key(media, new, workers):
+    h = hashlib.sha1(repr((media, workers, DB_BYTES_PER_CHAR[media], PARALLEL_EFFICIENCY[media],
+                           SAMPLE[media])).encode("utf-8"))
+    for p, name, size, mtime in sorted(new):
+        h.update(f"\0{p}\0{name}\0{size}\0{mtime}".encode("utf-8", "surrogatepass"))
+    return h.hexdigest()
+
+
 def estimate(only=None):
     import random
     workers = paths.index_workers()
     out = {"workers": workers, "media": {}}
+    cache = _load_estimate_cache()
+    cache_changed = False
     for media, root, db, table in (("subs", paths.subs_dir(), paths.subs_db(), "subtitles"),
                                    ("epub", paths.books_dir(), paths.epub_db(), "epubs")):
         size_now = os.path.getsize(db) if os.path.isfile(db) else 0
@@ -450,9 +507,16 @@ def estimate(only=None):
             except sqlite3.Error:
                 pass
         indexed |= {r["name"] for r in filtered_rows(paths.filtered_list()) if r["media"] == media}
-        new = [(p, name, size) for _, name, p, size, _ in _walk(root, media) if name not in indexed]
+        walked = [(p, name, size, mtime) for _, name, p, size, mtime in _walk(root, media) if name not in indexed]
+        new = [(p, name, size) for p, name, size, _ in walked]
         m["new_files"], m["new_bytes"] = len(new), sum(s for _, _, s in new)
         if not new:
+            continue
+        key = _estimate_key(media, walked, workers)
+        kept = cache.get(media)
+        if isinstance(kept, dict) and kept.get("key") == key:
+            m.update({k: kept[k] for k in ("db_add", "rows_add", "seconds", "sampled") if k in kept})
+            m["kept"] = True
             continue
         by_ext = defaultdict(list)
         for f in new:
@@ -475,12 +539,19 @@ def estimate(only=None):
         m["db_add"] = int(chars * DB_BYTES_PER_CHAR[media])
         m["rows_add"] = int(rows)
         m["seconds"] = int(serial / max(1.0, workers * PARALLEL_EFFICIENCY[media])) if workers > 1 else int(serial)
-    total = sum(m["db_now"] + m["db_add"] for m in out["media"].values())
+        cache[media] = {"key": key, **{k: m[k] for k in ("db_add", "rows_add", "seconds", "sampled")}}
+        cache_changed = True
+    if cache_changed:
+        _save_estimate_cache(cache)
+    total =sum(m["db_now"] + m["db_add"] for m in out["media"].values())
     out.update(total_bytes=total, warn=total > WARN_TOTAL_BYTES,
                seconds=sum(m["seconds"] for m in out["media"].values()))
     for media, db in (("subs", paths.subs_db()), ("epub", paths.epub_db())):
         try:
-            out["media"][media]["disk_free"] = shutil.disk_usage(os.path.dirname(os.path.abspath(db))).free
+            folder = os.path.dirname(os.path.abspath(db))
+            while not os.path.isdir(folder) and os.path.dirname(folder) != folder:
+                folder = os.path.dirname(folder)
+            out["media"][media]["disk_free"] = shutil.disk_usage(folder).free
         except OSError:
             out["media"][media]["disk_free"] = None
     return out

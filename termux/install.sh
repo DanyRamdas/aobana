@@ -10,7 +10,7 @@ set -e
 AOBANA_DIR="${AOBANA_DIR:-/storage/emulated/0/Aobana}"
 TARBALL="https://codeload.github.com/Wyzmic/aobana/tar.gz/refs/heads/main"
 DISTRO="aobana"
-PHONE_FILES="app.py engine.py utils.py paths.py library.py analyser.py indexer.py epub_indexer.py folder_picker.py updater.py index.html
+PHONE_FILES="app.py engine.py utils.py paths.py library.py analyser.py indexer.py epub_indexer.py manga_indexer.py ass_ruby.py folder_picker.py updater.py index.html
 requirements.txt LICENSE THIRD_PARTY_NOTICES.md CHANGELOG.md data/ruby static"
 OLD_CLONE_FILES=".git .gitattributes .gitignore assets release termux Aobana.bat aobana.sh
 launcher.py README.md README.ja.md"

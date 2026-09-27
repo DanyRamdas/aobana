@@ -41,7 +41,7 @@ def get_tokenizer():
 from utils import (
     KANA_RE, KANJI_CHARS, KANJI_PATTERN,
     ALPHA_CHARS, ALPHA_PATTERN, RUBY_BASE_RE, BOOK_RUBY_RE,
-    norm_relpath, INDEX_FORMAT, ensure_format_column, compact_if_worth, stop_requested, write_tokenizer_meta, ruby_index_extras, parallel_map, filtered_names,
+    norm_relpath, INDEX_FORMAT, is_outdated, ensure_format_column, compact_if_worth, stop_requested, write_tokenizer_meta, ruby_index_extras, parallel_map, filtered_names,
 )
 
 TIMESTAMP_SCENE_RE = re.compile(
@@ -57,6 +57,7 @@ from utils import convert_hw_katakana, EPUB_STR_REPLACEMENTS, katakana_to_hiraga
 from utils import normalize_cjk_spacing, book_title_and_author
 from utils import ensure_chapters, chapter_spans, has_chapters
 from utils import ensure_line_lengths, has_line_lengths, write_line_lengths
+from utils import ensure_ruby_lexicon, has_ruby_lexicon, write_ruby_lexicon, drop_ruby_lexicon
 
 _RE_REPLACEMENTS = [
     (re.compile(r'＠ルビ.*?［(.+?)[｜|](.+?)］＠'), r'｜\1(\2)'),
@@ -1009,12 +1010,43 @@ COMMIT_EVERY_BOOKS = 20
 COMMIT_EVERY_SECONDS = 20
 
 
+def build_tables(conn, top):
+    if top and not has_chapters(conn):
+        print("CHAPTERS building the chapter table (once, reads the whole index)...", flush=True)
+    if ensure_chapters(conn) and top:
+        print(f"CHAPTERS {conn.execute('SELECT COUNT(*) FROM chapters').fetchone()[0]} chapters", flush=True)
+    if top and not has_line_lengths(conn):
+        print("LENGTHS building the display-length table (once, reads the whole index)...", flush=True)
+    ensure_line_lengths(conn, DB_PATH, "epubs", "epub", paths.index_workers())
+    if stop_requested():
+        return
+    if top and not has_ruby_lexicon(conn):
+        print("LEXICON building the ruby lexicon table (once, reads the whole index)...", flush=True)
+    ensure_ruby_lexicon(conn, "epubs", "epub")
+
+
+def run_tables():
+    print(f"Building the book index's tables ({DB_PATH})...")
+    with sqlite3.connect(DB_PATH) as conn:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'epubs'").fetchone() is None:
+            print("Tables ready: no book index yet.")
+            return
+        build_tables(conn, conn.execute("SELECT rowid FROM epubs ORDER BY rowid DESC LIMIT 1").fetchone())
+    if stop_requested():
+        print("STOPPED", flush=True)
+    else:
+        print("Tables ready.")
+
+
 def run_epub_indexer(force=False, outdated=False):
     print(f"Starting EPUB indexer on {EPUB_ROOT_DIR} (force={force}, outdated={outdated})...")
     _EXCLUDED_LOG.clear()
     if EPUB_ROOT_DIR is None:
         print("ROOT_NOT_SET epub")
         print("No books folder is set (Library tab). Nothing was changed.")
+        return
+    if not paths.media_enabled("books"):
+        print("Books are off in Settings. Nothing was changed.")
         return
     if not os.path.isdir(EPUB_ROOT_DIR):
         print(f"ROOT_MISSING {EPUB_ROOT_DIR}")
@@ -1032,6 +1064,7 @@ def run_epub_indexer(force=False, outdated=False):
             conn.execute("DROP TABLE IF EXISTS sources")
             conn.execute("DROP TABLE IF EXISTS chapters")
             conn.execute("DROP TABLE IF EXISTS line_lengths")
+            conn.execute("DROP TABLE IF EXISTS ruby_lexicon")
             conn.commit()
 
         conn.execute('''
@@ -1061,16 +1094,11 @@ def run_epub_indexer(force=False, outdated=False):
         ensure_format_column(conn)
         conn.commit()
         top = conn.execute("SELECT rowid FROM epubs ORDER BY rowid DESC LIMIT 1").fetchone()
-        if top and not has_chapters(conn):
-            print("CHAPTERS building the chapter table (once, reads the whole index)...", flush=True)
-        if ensure_chapters(conn) and top:
-            print(f"CHAPTERS {conn.execute('SELECT COUNT(*) FROM chapters').fetchone()[0]} chapters", flush=True)
-        if top and not has_line_lengths(conn):
-            print("LENGTHS building the display-length table (once, reads the whole index)...", flush=True)
-        ensure_line_lengths(conn, DB_PATH, "epubs", "epub", paths.index_workers())
+        build_tables(conn, top)
         lengths = has_line_lengths(conn)
+        lexicon = has_ruby_lexicon(conn)
         cur = conn.execute("SELECT id, relpath, file_hash, index_format FROM sources")
-        existing_files = {row['relpath']: {'id': row['id'], 'hash': None if outdated and row['index_format'] < INDEX_FORMAT['epub'] else row['file_hash']}
+        existing_files = {row['relpath']: {'id': row['id'], 'hash': None if outdated and is_outdated('epub', row['relpath'], row['index_format']) else row['file_hash']}
                           for row in cur}
         deleted_rows = inserted_rows = 0
         if outdated:
@@ -1085,6 +1113,8 @@ def run_epub_indexer(force=False, outdated=False):
             spans = conn.execute("SELECT first_rowid, last_rowid FROM chapters WHERE source_id = ?",
                                  (source_id,)).fetchall()
             conn.execute("DELETE FROM chapters WHERE source_id = ?", (source_id,))
+            if lexicon:
+                drop_ruby_lexicon(conn, [source_id])
             return spans
 
         def delete_rows(source_id, spans):
@@ -1183,6 +1213,8 @@ def run_epub_indexer(force=False, outdated=False):
                              chapter_spans((next_rowid + i, source_id, r[0]) for i, r in enumerate(rows)))
             if lengths:
                 write_line_lengths(conn, ((next_rowid + i, r[1]) for i, r in enumerate(rows)), "epub")
+            if lexicon:
+                write_ruby_lexicon(conn, "epub", ((source_id, r[0], r[1]) for r in rows))
             next_rowid += len(rows)
             print(f"Indexed EPUB: {title} by {author} ({len(rows)} sentences in {n_chapters} chapters)")
             pending += 1
@@ -1228,4 +1260,8 @@ def run_epub_indexer(force=False, outdated=False):
 if __name__ == "__main__":
     import sys
     force_flag = "--force" in sys.argv
+    if "--tables" in sys.argv:
+        if os.path.exists(DB_PATH):
+            run_tables()
+        sys.exit(0)
     run_epub_indexer(force=force_flag, outdated="--outdated" in sys.argv)

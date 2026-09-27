@@ -46,7 +46,7 @@ BOOK_RUBY_RE = re.compile(rf'(?:｜([^()｜\n\r\t]+?)|(?!)({RUBY_BASE_RE}))\(({K
 
 
 def ruby_re_for(media: str):
-    return BOOK_RUBY_RE if media == 'epub' else RUBY_RE
+    return BOOK_RUBY_RE if media in ('epub', 'manga') else RUBY_RE
 
 
 BOOK_DISPLAY_RUBY_RE = re.compile(
@@ -161,6 +161,24 @@ EPUB_STR_REPLACEMENTS = [
     ("...", "…"), ("･･･", "…"),
     ("…　", "…"), ("… ", "…"), (" …", "…"), ("　…", "…"),
 ]
+
+MANGA_STR_REPLACEMENTS = [
+    ("〜", "～"),
+]
+MANGA_RE_REPLACEMENTS = [
+    (re.compile(r'．{2,}'), '…'),
+    (re.compile(r'…{2,}'), '…'),
+    (re.compile(r'^ー+'), '――'),
+]
+
+
+def normalize_manga_text(text: str) -> str:
+    for src, dst in MANGA_STR_REPLACEMENTS:
+        text = text.replace(src, dst)
+    for pattern, dst in MANGA_RE_REPLACEMENTS:
+        text = pattern.sub(dst, text)
+    return text
+
 
 def katakana_to_hiragana(text: str) -> str:
     return text.translate(str.maketrans(
@@ -370,14 +388,103 @@ def ruby_reading(m) -> str:
     return re.sub(r'[ 　]', '', m.group(3))
 
 
+def work_folder(file: str) -> str:
+    return file.split('\\', 1)[0]
+
+
+def lexicon_entries(media: str, line: str):
+    for m in ruby_re_for(media).finditer(line):
+        yield m.group(1) or m.group(2), ruby_reading(m)
+
+
 def build_ruby_lexicon(rows):
     by_work, corpus = {}, {}
     for work, line in rows:
-        for m in ruby_re_for(work[0]).finditer(line):
-            base, r = m.group(1) or m.group(2), ruby_reading(m)
+        for base, r in lexicon_entries(work[0], line):
             by_work.setdefault((work, base), set()).add(r)
             corpus.setdefault(base, set()).add(r)
     return by_work, corpus
+
+
+RUBY_LEXICON_VERSION = "1"
+RUBY_LEXICON_SCHEMA = (
+    "CREATE TABLE ruby_lexicon (source_id INTEGER NOT NULL, folder TEXT NOT NULL, base TEXT NOT NULL, "
+    "reading TEXT NOT NULL, PRIMARY KEY (base, folder, reading, source_id)) WITHOUT ROWID",
+    "CREATE INDEX ruby_lexicon_source ON ruby_lexicon(source_id)",
+)
+
+
+def has_ruby_lexicon(conn) -> bool:
+    try:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ruby_lexicon'").fetchone() is None:
+            return False
+        row = conn.execute("SELECT v FROM meta WHERE k = 'ruby_lexicon_version'").fetchone()
+        return row is not None and row[0] == RUBY_LEXICON_VERSION
+    except sqlite3.Error:
+        return False
+
+
+def lexicon_rows(media, rows):
+    out = set()
+    for sid, f, line in rows:
+        if '(' in line:
+            folder = work_folder(f)
+            for base, r in lexicon_entries(media, line):
+                out.add((sid, folder, base, r))
+    return out
+
+
+def write_ruby_lexicon(conn, media, rows):
+    conn.executemany("INSERT OR IGNORE INTO ruby_lexicon VALUES (?, ?, ?, ?)", lexicon_rows(media, rows))
+
+
+def drop_ruby_lexicon(conn, source_ids):
+    conn.executemany("DELETE FROM ruby_lexicon WHERE source_id = ?", [(s,) for s in source_ids])
+
+
+MEDIA_TABLES = {"subs": "subtitles", "epub": "epubs", "manga": "manga"}
+
+
+def missing_tables(conn, media) -> list:
+    if conn is None:
+        return []
+    table = MEDIA_TABLES[media]
+    try:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (table,)).fetchone() is None:
+            return []
+        out = []
+        if media == "epub" and not has_chapters(conn):
+            out.append("chapters")
+        if not has_line_lengths(conn):
+            out.append("line_lengths")
+        if not has_ruby_lexicon(conn):
+            out.append("ruby_lexicon")
+        return out
+    except sqlite3.Error:
+        return []
+
+
+def ruby_lexicon_drift(conn, table, media):
+    have = set(conn.execute("SELECT source_id, folder, base, reading FROM ruby_lexicon"))
+    want = lexicon_rows(media, conn.execute(
+        f"SELECT source_id, file, line FROM {table} WHERE instr(line, ?) > 0", ('(',)))
+    return len(want - have), len(have - want)
+
+
+def ensure_ruby_lexicon(conn, table, media) -> bool:
+    conn.execute("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
+    conn.commit()
+    if has_ruby_lexicon(conn):
+        return False
+    conn.execute("BEGIN")
+    conn.execute("DROP TABLE IF EXISTS ruby_lexicon")
+    for sql in RUBY_LEXICON_SCHEMA:
+        conn.execute(sql)
+    rows = conn.execute(f"SELECT source_id, file, line FROM {table} WHERE instr(line, ?) > 0", ('(',))
+    write_ruby_lexicon(conn, media, rows)
+    conn.execute("INSERT OR REPLACE INTO meta (k, v) VALUES ('ruby_lexicon_version', ?)", (RUBY_LEXICON_VERSION,))
+    conn.commit()
+    return True
 
 
 def split_spaced_ruby(prev: str, base: str, reading: str, evidence):
@@ -401,24 +508,50 @@ def split_spaced_ruby(prev: str, base: str, reading: str, evidence):
     return (best[1], best[2]) if best else None
 
 
-def load_ruby_decisions(path) -> dict:
+RUBY_TABLES = {
+    "ruby_decisions": ("prev", "base", "reading", "decision"),
+    "gloss_names": ("prev", "base", "reading", "decision"),
+    "ruby_dict_merge": ("base", "reading"),
+    "ruby_whole": ("base", "reading"),
+    "ruby_trim": ("base", "reading", "cut"),
+    "gloss_ruby": ("base", "reading"),
+    "unclosed_ruby": ("tag", "base", "reading"),
+    "ass_pairs": ("base", "reading"),
+}
+
+
+@functools.lru_cache(maxsize=4)
+def _ruby_tables(path) -> dict:
     out = {}
     if not os.path.exists(path):
         return out
     with open(path, encoding="utf-8") as f:
-        next(f, None)
-        for n, row in enumerate(f, 2):
-            if not row.strip():
-                continue
-            prev, base, reading, decision = row.rstrip("\n").split("\t")[:4]
-            if decision == "B":
-                out[(prev, base, reading)] = None
-                continue
-            r_prev, sep, r_base = decision.partition("|")
-            if (not sep or not r_prev or not r_base or not reading.startswith(r_prev)
-                    or reading[len(r_prev):].lstrip(_RUBY_SEP) != r_base):
-                raise ValueError(f"{path}:{n}: {decision!r} does not split {reading!r}")
-            out[(prev, base, reading)] = (r_prev, r_base)
+        for n, row in enumerate(f, 1):
+            if row.strip():
+                name, *cols = row.rstrip("\n").split("\t")
+                out.setdefault(name, []).append((n, cols))
+    for name, rows in out.items():
+        n, header = rows[0]
+        if tuple(header) != RUBY_TABLES.get(name):
+            raise ValueError(f"{path}:{n}: table {name!r} has header {header}, want {RUBY_TABLES.get(name)}")
+    return out
+
+
+def ruby_table(path, name) -> list:
+    return _ruby_tables(path).get(name, [])[1:]
+
+
+def load_ruby_decisions(path, table) -> dict:
+    out = {}
+    for n, (prev, base, reading, decision) in ruby_table(path, table):
+        if decision == "B":
+            out[(prev, base, reading)] = None
+            continue
+        r_prev, sep, r_base = decision.partition("|")
+        if (not sep or not r_prev or not r_base or not reading.startswith(r_prev)
+                or reading[len(r_prev):].lstrip(_RUBY_SEP) != r_base):
+            raise ValueError(f"{path}:{n}: {decision!r} does not split {reading!r}")
+        out[(prev, base, reading)] = (r_prev, r_base)
     return out
 
 
@@ -426,33 +559,17 @@ def ruby_merge_key(furi: str) -> str:
     return katakana_to_hiragana("".join(c for c in furi if c not in _RUBY_SEP))
 
 
-def load_ruby_merges(path) -> frozenset:
-    out = set()
-    if not os.path.exists(path):
-        return frozenset()
-    with open(path, encoding="utf-8") as f:
-        next(f, None)
-        for row in f:
-            if row.strip():
-                base, reading = row.rstrip("\n").split("\t")[:2]
-                out.add((base, ruby_merge_key(reading)))
-    return frozenset(out)
+def load_ruby_merges(path, table) -> frozenset:
+    return frozenset((base, ruby_merge_key(reading)) for _, (base, reading) in ruby_table(path, table))
 
 
-def load_ruby_trims(path) -> dict:
+def load_ruby_trims(path, table="ruby_trim") -> dict:
     out = {}
-    if not os.path.exists(path):
-        return out
-    with open(path, encoding="utf-8") as f:
-        next(f, None)
-        for n, row in enumerate(f, 2):
-            if not row.strip():
-                continue
-            base, reading, cut = row.rstrip("\n").split("\t")[:3]
-            cut = int(cut)
-            if not 0 <= cut < len(base):
-                raise ValueError(f"{path}:{n}: cut {cut} leaves nothing of {base!r} under the ruby")
-            out[(base, ruby_merge_key(reading))] = cut
+    for n, (base, reading, cut) in ruby_table(path, table):
+        cut = int(cut)
+        if not 0 <= cut < len(base):
+            raise ValueError(f"{path}:{n}: cut {cut} leaves nothing of {base!r} under the ruby")
+        out[(base, ruby_merge_key(reading))] = cut
     return out
 
 
@@ -621,7 +738,20 @@ def tokenizer_identity(with_hash: bool = True) -> dict:
     return ident
 
 
-INDEX_FORMAT = {"subs": 2, "epub": 2}
+INDEX_FORMAT = {"subs": 3, "epub": 2, "manga": 1}
+FORMAT_SCOPE = {("subs", 3): (".ass", ".ssa")}
+
+
+def required_format(media, relpath) -> int:
+    for n in range(INDEX_FORMAT[media], 1, -1):
+        scope = FORMAT_SCOPE.get((media, n))
+        if scope is None or relpath.lower().endswith(scope):
+            return n
+    return 1
+
+
+def is_outdated(media, relpath, index_format) -> bool:
+    return index_format < required_format(media, relpath)
 
 
 def ensure_format_column(conn):
@@ -637,8 +767,8 @@ def outdated_sources(conn, media) -> int:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(sources)")}
         if "index_format" not in cols:
             return conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
-        return conn.execute("SELECT COUNT(*) FROM sources WHERE index_format < ?",
-                            (INDEX_FORMAT[media],)).fetchone()[0]
+        return sum(is_outdated(media, relpath, fmt) for relpath, fmt in conn.execute(
+            "SELECT relpath, index_format FROM sources WHERE index_format < ?", (INDEX_FORMAT[media],)))
     except Exception:
         return 0
 
@@ -731,6 +861,8 @@ def stored_display_length(line, media):
         if BOOK_DISPLAY_RUBY_RE.search(line):
             return None
         processed = line
+    elif media == "manga":
+        processed = BOOK_RUBY_RE.sub(r'', line)
     else:
         processed = RUBY_RE.sub(r'\1\2', line)
     return len(DISPLAY_NONWORD_RE.sub('', DISPLAY_PUNCT_RE.sub('', processed)))
@@ -842,7 +974,8 @@ def write_tokenizer_meta(conn, tokenized_rows: int) -> dict:
     if tokenized_rows <= 0:
         return dict(conn.execute("select k, v from meta").fetchall())
 
-    prior = dict(conn.execute("select k, v from meta").fetchall())
+    prior = {k: v for k, v in conn.execute("select k, v from meta")
+             if k not in ("line_lengths_version", "ruby_lexicon_version")}
     ident = tokenizer_identity()
     was = prior.get("system_dic_sha256")
     if prior and was != ident["system_dic_sha256"]:
